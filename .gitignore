@@ -1,0 +1,5 @@
+__pycache__/
+*.zip
+debug_output/
+debug_outputs/
+pack/

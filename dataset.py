@@ -1,265 +1,221 @@
 import torch
-import torch.utils.data as data
-import torchvision.datasets as datasets
-import torchvision.transforms as transforms
+from torch.utils.data import Dataset, DataLoader
+import torchvision.datasets as tvd
+from torchvision import transforms
 import numpy as np
 import random
 from PIL import Image
+from collections import Counter
 
-
-class SPMIDataset:
-    #dataset wrapper for spmi added unlabeled data also 
-    def __init__(self, dataset_name, root='./data', num_labeled=4000,
-                partial_rate=0.3, transform=None, download=True, seed=42):
+class SPMIDataset(Dataset):
+    """Partial‐label dataset wrapper with global‐index return."""
+    def __init__(self,
+                 dataset_name,
+                 root='./data',
+                 num_labeled=4000,
+                 partial_rate=0.3,
+                 transform=None,
+                 download=True,
+                 seed=42):
         self.dataset_name = dataset_name
-        self.num_labeled = num_labeled
+        self.num_labeled  = num_labeled
         self.partial_rate = partial_rate
-        self.transform = transform
-        self.download = download
-        self.seed = seed
+        self.transform    = transform
+        self.download     = download
+
+        random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        random.seed(seed)
-        
-        # load the selected dataset
+
+        # 1) load raw arrays + test split
         self._load_dataset(root)
-        
-        # split into labeled and unlabeled data
+        # 2) split into labeled / unlabeled indices
         self._split_data()
-        
-        # Screw up labeled data by generating partial labels
+        # 3) generate initial candidate sets for labeled
         self._generate_partial_labels()
-    
+
     def _load_dataset(self, root):
-        #This downloads and loads the datasets
         if self.dataset_name == 'fashion_mnist':
-            dataset = datasets.FashionMNIST(
-                root=root, train=True, download=self.download, transform=None
-            )
-            self.data = dataset.data.numpy()
-            self.targets = dataset.targets.numpy()
+            ds = tvd.FashionMNIST(root, train=True, download=self.download, transform=None)
+            self.data   = ds.data.numpy()
+            self.targets= ds.targets.numpy()
             self.num_classes = 10
+            self.test_ds = tvd.FashionMNIST(
+                root, train=False, download=self.download,
+                transform=get_transforms(self.dataset_name, strong_aug=False)
+            )
         elif self.dataset_name == 'cifar10':
-            dataset = datasets.CIFAR10(
-                root=root, train=True, download=self.download, transform=None
-            )
-            self.data = dataset.data
-            self.targets = np.array(dataset.targets)
+            ds = tvd.CIFAR10(root, train=True, download=self.download, transform=None)
+            self.data   = ds.data
+            self.targets= np.array(ds.targets)
             self.num_classes = 10
-        elif self.dataset_name == 'cifar100':
-            dataset = datasets.CIFAR100(
-                root=root, train=True, download=self.download, transform=None
+            self.test_ds = tvd.CIFAR10(
+                root, train=False, download=self.download,
+                transform=get_transforms(self.dataset_name, strong_aug=False)
             )
-            self.data = dataset.data
-            self.targets = np.array(dataset.targets)
+        elif self.dataset_name == 'cifar100':
+            ds = tvd.CIFAR100(root, train=True, download=self.download, transform=None)
+            self.data   = ds.data
+            self.targets= np.array(ds.targets)
             self.num_classes = 100
-        elif self.dataset_name == 'svhn':
-            dataset = datasets.SVHN(
-                root=root, split='train', download=self.download, transform=None
+            self.test_ds = tvd.CIFAR100(
+                root, train=False, download=self.download,
+                transform=get_transforms(self.dataset_name, strong_aug=False)
             )
-            self.data = dataset.data
-            self.targets = dataset.labels
+        elif self.dataset_name == 'svhn':
+            ds = tvd.SVHN(root, split='train', download=self.download, transform=None)
+            self.data    = ds.data
+            self.targets = np.array(ds.labels)
             self.num_classes = 10
+            self.test_ds = tvd.SVHN(
+                root, split='test', download=self.download,
+                transform=get_transforms(self.dataset_name, strong_aug=False)
+            )
         else:
-            raise ValueError(f"Unknown dataset: {self.dataset_name}")
-        
-        # Create test dataset as well
-        if self.dataset_name == 'fashion_mnist':
-            self.test_dataset = datasets.FashionMNIST(
-                root=root, train=False, download=self.download, transform=get_transforms(self.dataset_name, strong_aug=False)
-            )
-        elif self.dataset_name == 'cifar10':
-            self.test_dataset = datasets.CIFAR10(
-                root=root, train=False, download=self.download, transform=get_transforms(self.dataset_name, strong_aug=False)
-            )
-        elif self.dataset_name == 'cifar100':
-            self.test_dataset = datasets.CIFAR100(
-                root=root, train=False, download=self.download, transform=get_transforms(self.dataset_name, strong_aug=False)
-            )
-        elif self.dataset_name == 'svhn':
-            self.test_dataset = datasets.SVHN(
-                root=root, split='test', download=self.download, transform=get_transforms(self.dataset_name, strong_aug=False)
-            )
-    
+            raise ValueError(f"Unknown dataset {self.dataset_name}")
+
     def _split_data(self):
-        # shuffle indices
-        indices = list(range(len(self.targets)))
-        random.shuffle(indices)
-        
-        # goup indices by class
-        class_indices = [[] for _ in range(self.num_classes)]
-        for idx in indices:
-            class_indices[self.targets[idx]].append(idx)
-        
-        # pick equal instances per class for labeled set
-        labeled_indices = []
-        samples_per_class = self.num_labeled // self.num_classes
-        
-        for c in range(self.num_classes):
-            if len(class_indices[c]) < samples_per_class:
-                raise ValueError(f"Not enough samples in class {c}")
-            labeled_indices.extend(class_indices[c][:samples_per_class])
-        
-        # Keep everyting else for unlabeled set
-        unlabeled_indices = [idx for idx in indices if idx not in labeled_indices]
-        
-        self.labeled_indices = labeled_indices
-        self.unlabeled_indices = unlabeled_indices
-        print(f"Dataset {self.dataset_name}: {len(self.labeled_indices)} labeled instances, {len(self.unlabeled_indices)} unlabeled instances")
-    
+        idxs = list(range(len(self.targets)))
+        random.shuffle(idxs)
+        per_cls = self.num_labeled // self.num_classes
+
+        cls_to_idxs = {c: [] for c in range(self.num_classes)}
+        for i in idxs:
+            cls_to_idxs[self.targets[i]].append(i)
+
+        self.labeled_indices = []
+        for c, lst in cls_to_idxs.items():
+            if len(lst) < per_cls:
+                raise ValueError(f"Not enough examples of class {c}")
+            self.labeled_indices += lst[:per_cls]
+        self.unlabeled_indices = [i for i in idxs if i not in self.labeled_indices]
+
+        print(f"{self.dataset_name}: {len(self.labeled_indices)} labeled, "
+              f"{len(self.unlabeled_indices)} unlabeled.")
+
     def _generate_partial_labels(self):
-        #initialize candidate label sets for all data
         self.candidate_labels = [[] for _ in range(len(self.targets))]
-        
-        # generate partial labels for labeled data
         for idx in self.labeled_indices:
-            true_label = self.targets[idx]
-            # qlways include the true label
-            labels = [true_label]
-            
-            # based on the p rate add incorrect labels
-            max_candidates = max(2, int(self.partial_rate * self.num_classes))
-            while len(labels) < max_candidates:
-                candidate = random.randint(0, self.num_classes - 1)
-                if candidate != true_label and candidate not in labels:
-                    labels.append(candidate)
-            
-            self.candidate_labels[idx] = labels
-            
-        # average number of candidates
-        avg_candidates = sum(len(self.candidate_labels[idx]) for idx in self.labeled_indices) / len(self.labeled_indices)
-        print(f"Average number of candidates per labeled instance: {avg_candidates:.2f}")
-    
+            true = self.targets[idx]
+            choices = [true]
+            for c in range(self.num_classes):
+                if c != true and random.random() < self.partial_rate:
+                    choices.append(c)
+            while len(choices) < 2:
+                c = random.randrange(self.num_classes)
+                if c != true and c not in choices:
+                    choices.append(c)
+            self.candidate_labels[idx] = choices
+
+        sizes = [len(self.candidate_labels[i]) for i in self.labeled_indices]
+        from collections import Counter
+        dist = Counter(sizes)
+        avg = sum(sizes) / len(sizes)
+        print(f"Avg candidates/labeled: {avg:.2f}, dist={dict(dist)}")
+
     def __len__(self):
-        #total no. of instances
         return len(self.data)
-    
+
     def __getitem__(self, idx):
-       #get an instance
-        img, target = self.data[idx], self.targets[idx]
-        
-        # image transforms
+        img = self.data[idx]
         if self.dataset_name == 'fashion_mnist':
             img = Image.fromarray(img, mode='L')
-        elif self.dataset_name == 'svhn':
-            img = np.transpose(img, (1, 2, 0))
+        else:
             img = Image.fromarray(img)
-        else:  # CIFAR-10 andCIFAR-100
-            img = Image.fromarray(img)
-        
+
         if self.transform:
             img = self.transform(img)
-        
-        # Create candidate label mask
-        candidate_mask = torch.zeros(self.num_classes)
-        for label in self.candidate_labels[idx]:
-            candidate_mask[label] = 1
-        
-        # Is this a labeled instance?
-        is_labeled = torch.tensor(idx in self.labeled_indices, dtype=torch.int)
-        
-        return img, candidate_mask, target, idx, is_labeled
-    
-    def update_candidate_labels(self, idx, new_candidates):
-        #candidate label update
-        if isinstance(new_candidates, torch.Tensor):
-            # convert from mask to list of indices
-            new_candidates = new_candidates.nonzero(as_tuple=True)[0].tolist()
-        self.candidate_labels[idx] = new_candidates
-        
-        # should ensure at least one candidate is there
-        if len(self.candidate_labels[idx]) == 0:
-            # if we have nothing then add the true label
-            self.candidate_labels[idx] = [self.targets[idx]]
-    
+
+        mask = torch.zeros(self.num_classes, dtype=torch.bool)
+        for c in self.candidate_labels[idx]:
+            mask[c] = True
+
+        is_lab = torch.tensor(idx in self.labeled_indices, dtype=torch.bool)
+        target = self.targets[idx]
+        return img, mask, target, idx, is_lab
+
+    def update_candidate_labels(self, idx, new_cands):
+        if isinstance(new_cands, torch.Tensor):
+            new_cands = new_cands.nonzero(as_tuple=True)[0].tolist()
+        self.candidate_labels[idx] = new_cands or [self.targets[idx]]
+
     def get_candidate_masks(self):
-        masks = torch.zeros(len(self.data), self.num_classes)
-        for idx, candidates in enumerate(self.candidate_labels):
-            for label in candidates:
-                masks[idx, label] = 1
-        return masks
-        
-    def get_test_loader(self, batch_size=256):
-        return torch.utils.data.DataLoader(
-            self.test_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=2
-        )
+        M = torch.zeros(len(self.data), self.num_classes, dtype=torch.bool)
+        for i, cands in enumerate(self.candidate_labels):
+            for c in cands:
+                M[i, c] = True
+        return M
+
+    def get_test_loader(self, batch_size=256, num_workers=2):
+        return DataLoader(self.test_ds,
+                          batch_size=batch_size,
+                          shuffle=False,
+                          num_workers=num_workers)
 
 
-# HELPER FUNC : ALL THE TRANSFORMS ARE HERE
-def get_transforms(dataset_name, strong_aug=False):
-    if dataset_name == 'fashion_mnist':
-        # weak aug
-        weak_transform = transforms.Compose([
-            transforms.RandomCrop(28, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor()
-        ])
-        
-        # No AutoAugment for F-MNIST as per paper
-        if strong_aug:
-            strong_transform = transforms.Compose([
-                transforms.RandomCrop(28, padding=4),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                Cutout(n_holes=1, length=16)
-            ])
-        else:
-            strong_transform = weak_transform
-    else:  # CIFAR-10,CIFAR-100,SVHN
-        weak_transform = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor()
-        ])
-        
-        if strong_aug:
-            strong_transform = transforms.Compose([
-                transforms.RandomCrop(32, padding=4),
-                transforms.RandomHorizontalFlip(),
-                AutoAugment(dataset_name),
-                transforms.ToTensor(),
-                Cutout(n_holes=1, length=16)
-            ])
-        else:
-            strong_transform = weak_transform
-    
-    return weak_transform if not strong_aug else strong_transform
-
+# ------ transforms & augmentation helpers ------
 
 class Cutout:
-    #cutout implementation
+    """Cutout on a tensor image (C×H×W)."""
     def __init__(self, n_holes=1, length=16):
         self.n_holes = n_holes
-        self.length = length
+        self.length  = length
+
     def __call__(self, img):
-        h = img.size(1)
-        w = img.size(2)
-        mask = np.ones((h, w), np.float32)
+        # expect img: Tensor[C, H, W]
+        c, h, w = img.shape
+        mask = torch.ones((h, w), dtype=img.dtype, device=img.device)
         for _ in range(self.n_holes):
-            y = np.random.randint(h)
-            x = np.random.randint(w)
-            y1 = np.clip(y - self.length // 2, 0, h)
-            y2 = np.clip(y + self.length // 2, 0, h)
-            x1 = np.clip(x - self.length // 2, 0, w)
-            x2 = np.clip(x + self.length // 2, 0, w)
-            mask[y1: y2, x1: x2] = 0.
-        mask = torch.from_numpy(mask)
-        mask = mask.expand_as(img)
-        img = img * mask
-        return img
+            y = random.randrange(h)
+            x = random.randrange(w)
+            y1, y2 = max(0, y - self.length//2), min(h, y + self.length//2)
+            x1, x2 = max(0, x - self.length//2), min(w, x + self.length//2)
+            mask[y1:y2, x1:x2] = 0.0
+        mask = mask.unsqueeze(0).expand(c, -1, -1)
+        return img * mask
+
 class AutoAugment:
-    #Autoaug
     def __init__(self, dataset_name):
-        from torchvision.transforms import AutoAugment as TvAutoAugment
-        from torchvision.transforms import AutoAugmentPolicy
+        from torchvision.transforms import AutoAugmentPolicy, AutoAugment as TA
         if dataset_name == 'svhn':
-            self.policy = TvAutoAugment(AutoAugmentPolicy.SVHN)
-        elif dataset_name in ['cifar10', 'cifar100']:
-            self.policy = TvAutoAugment(AutoAugmentPolicy.CIFAR10)
+            policy = AutoAugmentPolicy.SVHN
+        elif dataset_name in ('cifar10', 'cifar100'):
+            policy = AutoAugmentPolicy.CIFAR10
         else:
-            self.policy = TvAutoAugment(AutoAugmentPolicy.IMAGENET)
+            policy = AutoAugmentPolicy.IMAGENET
+        self.aug = TA(policy)
+
     def __call__(self, img):
-        return self.policy(img)
+        return self.aug(img)
+
+def get_transforms(dataset_name, strong_aug=False):
+    # choose normalization & size
+    if dataset_name == 'fashion_mnist':
+        normalize = transforms.Normalize((0.5,), (0.5,))
+        size, pad = 28, 4
+    elif dataset_name in ['cifar10', 'cifar100']:
+        normalize = transforms.Normalize((0.4914,0.4822,0.4465),
+                                         (0.2023,0.1994,0.2010))
+        size, pad = 32, 4
+    else:  # svhn
+        normalize = transforms.Normalize((0.5,0.5,0.5),
+                                         (0.5,0.5,0.5))
+        size, pad = 32, 4
+
+    tf_list = [
+        transforms.RandomCrop(size, padding=pad),
+        transforms.RandomHorizontalFlip(),
+    ]
+    # PIL-based strong augment first
+    if strong_aug:
+        tf_list.append(AutoAugment(dataset_name))
+    # then ToTensor + Normalize
+    tf_list += [
+        transforms.ToTensor(),
+        normalize,
+    ]
+    # tensor-based strong augment last
+    if strong_aug:
+        tf_list.append(Cutout(n_holes=1, length=16))
+
+    return transforms.Compose(tf_list)

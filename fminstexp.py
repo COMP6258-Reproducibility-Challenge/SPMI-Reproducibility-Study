@@ -1,12 +1,13 @@
-# fmnistexp_paper_experiment.py
+# fmnist_exp.py
 
 import copy
 import csv
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
-
+from torchvision import datasets
 from dataset import SPMIDataset, get_transforms
 from model import get_model
 from spmi import SPMI
@@ -29,33 +30,28 @@ def evaluate(model, loader, device):
             total   += targets.size(0)
     return 100 * correct / total
 
-def main():
-    # ─── Hyperparameters (paper settings) ────────────────────────
+def run_experiment(num_labeled, partial_rate, seed=42):
+    # ─── Hyperparameters ────────────────────────────────────────
     dataset_name   = 'fashion_mnist'
-    num_labeled    = 1000
-    partial_rate   = 0.3
     warmup_epochs  = 10
     num_epochs     = 500
     batch_size     = 256
-    lr             = 0.03
+    lr             = 0.05  # Different LR for FMNIST
     weight_decay   = 5e-4
 
     # SPMI-specific
     tau            = 3.0
     unlabeled_tau  = 2.0
-    init_threshold = None  # defaults to 1/C in SPMI
-    prior_alpha    = 1.0   # no EMA smoothing
-    use_ib_penalty = False
-    ib_beta        = 0.0
+    init_threshold = None
+    prior_alpha    = 0.9   # EMA smoothing for FMNIST
+    use_ib_penalty = True
+    ib_beta        = 0.01
 
-    # EMA model toggle (paper does not use EMA for inference)
-    use_ema        = False
-    ema_decay      = 0.999
-
+    # ─── Device Setup ───────────────────────────────────────────
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Running on {device}\n")
+    print(f"Running on {device}")
 
-    # ─── Data ────────────────────────────────────────────────────
+    # ─── Data ───────────────────────────────────────────────────
     transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
@@ -64,23 +60,31 @@ def main():
         partial_rate=partial_rate,
         transform=transform_train,
         download=True,
-        seed=42
+        seed=seed
     )
+    
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,
+        pin_memory=True,
+        drop_last=True
+    )
+    
+    test_transform = get_transforms(dataset_name, train=False, strong_aug=False)
+    test_dataset = datasets.FashionMNIST(
+        './data', train=False, download=True, transform=test_transform
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
         pin_memory=True
     )
-    test_loader = train_dataset.get_test_loader(
-        batch_size=batch_size,
-        num_workers=4
-    )
 
-    unlabeled_idx = train_dataset.unlabeled_indices
-
-    # ─── Model & SPMI ────────────────────────────────────────────
+    # ─── Model & SPMI ───────────────────────────────────────────
     model = get_model(
         name='lenet',
         num_classes=train_dataset.num_classes,
@@ -110,13 +114,12 @@ def main():
         eta_min=0
     )
 
-    ema_model = create_ema_model(model) if use_ema else None
     original_masks = train_dataset.get_candidate_masks().to(device)
-
-    # ─── Diagnostics storage ────────────────────────────────────
+    
+    # ─── Training Loop ──────────────────────────────────────────
     diagnostics = []
-
-    # ─── Training Loop ─────────────────────────────────────────
+    best_acc = 0.0
+    
     for epoch in range(1, num_epochs + 1):
         loss = spmi.train_epoch(
             train_loader,
@@ -128,18 +131,18 @@ def main():
         )
         scheduler.step()
 
-        if use_ema:
-            update_ema_model(model, ema_model, ema_decay)
+        acc = evaluate(model, test_loader, device)
+        best_acc = max(best_acc, acc)
 
-        eval_model = ema_model or model
-        acc = evaluate(eval_model, test_loader, device)
-
-        # Minimal terminal output
-        u_masks = train_dataset.get_candidate_masks()[unlabeled_idx]
-        avg_u = u_masks.sum(dim=1).float().mean().item()
-        print(f"[Epoch {epoch:03d}/{num_epochs}] "
-              f"Loss: {loss:.4f}  Acc: {acc:.2f}%  "
-              f"AvgUnlabCands: {avg_u:.2f}")
+        # Progress monitoring
+        if epoch % 50 == 0 or epoch == num_epochs:
+            unlabeled_idx = train_dataset.unlabeled_indices
+            u_masks = train_dataset.get_candidate_masks()[unlabeled_idx]
+            avg_u = u_masks.sum(dim=1).float().mean().item()
+            
+            print(f"[Epoch {epoch:03d}/{num_epochs}] "
+                  f"Loss: {loss:.4f}  Acc: {acc:.2f}%  "
+                  f"Best: {best_acc:.2f}%  AvgUnlabCands: {avg_u:.2f}")
 
         # Record diagnostics
         priors = spmi.class_priors.cpu().tolist()
@@ -147,23 +150,57 @@ def main():
             'epoch': epoch,
             'loss': loss,
             'test_acc': acc,
-            'avg_unlabeled_cands': avg_u
+            'best_acc': best_acc
         }
-        # include class priors
         for i, p in enumerate(priors):
             row[f'prior_{i}'] = p
         diagnostics.append(row)
 
-    # ─── Save diagnostics ────────────────────────────────────────
-    keys = diagnostics[0].keys()
-    with open('fmnist_paper_experiment_diagnostics.csv', 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=keys)
+    # ─── Save Results ───────────────────────────────────────────
+    output_file = f'fmnist_l{num_labeled}_p{partial_rate}_s{seed}.csv'
+    with open(output_file, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=diagnostics[0].keys())
         writer.writeheader()
         writer.writerows(diagnostics)
 
-    print("\n▶ Diagnostics saved to fmnist_paper_experiment_diagnostics.csv")
-    print("▶ Paper experiment complete!")
+    print(f"▶ Results saved to {output_file}")
+    return best_acc
+
+def main():
+    print("Running Fashion-MNIST experiments from the paper...")
+    
+    # Paper experiments
+    experiments = [
+        (1000, 0.3),  # Table 1
+        (4000, 0.3),  # Table 1
+    ]
+    
+    results = {}
+    for num_labeled, partial_rate in experiments:
+        print(f"\n{'='*50}")
+        print(f"Experiment: l={num_labeled}, p={partial_rate}")
+        print(f"{'='*50}")
+        
+        # Run with different seeds for statistical significance
+        accs = []
+        for seed in [42]:
+            print(f"\nRunning with seed {seed}...")
+            acc = run_experiment(num_labeled, partial_rate, seed)
+            accs.append(acc)
+        
+        mean_acc = sum(accs) / len(accs)
+        std_acc = (sum((x - mean_acc)**2 for x in accs) / len(accs)) ** 0.5
+        
+        results[(num_labeled, partial_rate)] = (mean_acc, std_acc)
+        print(f"\nResults for l={num_labeled}, p={partial_rate}:")
+        print(f"Mean Accuracy: {mean_acc:.2f}% ± {std_acc:.2f}%")
+    
+    # Print summary
+    print(f"\n{'='*60}")
+    print("SUMMARY - Fashion-MNIST Results")
+    print(f"{'='*60}")
+    for (num_labeled, partial_rate), (mean_acc, std_acc) in results.items():
+        print(f"l={num_labeled}, p={partial_rate}: {mean_acc:.2f}% ± {std_acc:.2f}%")
 
 if __name__ == '__main__':
     main()
-

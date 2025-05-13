@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.datasets as tvd
-from torchvision import transforms
+from torchvision import transforms,datasets
 import numpy as np
 import random
 from PIL import Image
@@ -42,7 +42,7 @@ class SPMIDataset(Dataset):
             self.num_classes = 10
             self.test_ds = tvd.FashionMNIST(
                 root, train=False, download=self.download,
-                transform=get_transforms(self.dataset_name, strong_aug=False)
+                transform=get_transforms(self.dataset_name, train=False, strong_aug=False)
             )
         elif self.dataset_name == 'cifar10':
             ds = tvd.CIFAR10(root, train=True, download=self.download, transform=None)
@@ -51,7 +51,7 @@ class SPMIDataset(Dataset):
             self.num_classes = 10
             self.test_ds = tvd.CIFAR10(
                 root, train=False, download=self.download,
-                transform=get_transforms(self.dataset_name, strong_aug=False)
+                transform=get_transforms(self.dataset_name, train=False, strong_aug=False)
             )
         elif self.dataset_name == 'cifar100':
             ds = tvd.CIFAR100(root, train=True, download=self.download, transform=None)
@@ -60,16 +60,16 @@ class SPMIDataset(Dataset):
             self.num_classes = 100
             self.test_ds = tvd.CIFAR100(
                 root, train=False, download=self.download,
-                transform=get_transforms(self.dataset_name, strong_aug=False)
+                transform=get_transforms(self.dataset_name, train=False, strong_aug=False)
             )
         elif self.dataset_name == 'svhn':
             ds = tvd.SVHN(root, split='train', download=self.download, transform=None)
-            self.data    = ds.data
+            self.data = np.transpose(ds.data, (0, 2, 3, 1))
             self.targets = np.array(ds.labels)
             self.num_classes = 10
             self.test_ds = tvd.SVHN(
                 root, split='test', download=self.download,
-                transform=get_transforms(self.dataset_name, strong_aug=False)
+                transform=get_transforms(self.dataset_name, train=False, strong_aug=False)
             )
         else:
             raise ValueError(f"Unknown dataset {self.dataset_name}")
@@ -188,34 +188,41 @@ class AutoAugment:
     def __call__(self, img):
         return self.aug(img)
 
-def get_transforms(dataset_name, strong_aug=False):
-    # choose normalization & size
+def get_transforms(dataset_name, train=True, strong_aug=False):
+    # choose normalization & image size
     if dataset_name == 'fashion_mnist':
-        normalize = transforms.Normalize((0.5,), (0.5,))
+        mean, std = (0.5,), (0.5,)
         size, pad = 28, 4
     elif dataset_name in ['cifar10', 'cifar100']:
-        normalize = transforms.Normalize((0.4914,0.4822,0.4465),
-                                         (0.2023,0.1994,0.2010))
+        mean, std = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
         size, pad = 32, 4
     else:  # svhn
-        normalize = transforms.Normalize((0.5,0.5,0.5),
-                                         (0.5,0.5,0.5))
+        mean, std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
         size, pad = 32, 4
 
-    tf_list = [
-        transforms.RandomCrop(size, padding=pad),
-        transforms.RandomHorizontalFlip(),
-    ]
-    # PIL-based strong augment first
-    if strong_aug:
-        tf_list.append(AutoAugment(dataset_name))
-    # then ToTensor + Normalize
-    tf_list += [
-        transforms.ToTensor(),
-        normalize,
-    ]
-    # tensor-based strong augment last
-    if strong_aug:
-        tf_list.append(Cutout(n_holes=1, length=16))
+    normalize = transforms.Normalize(mean, std)
+
+    if train:
+        tf_list = [
+            transforms.RandomCrop(size, padding=pad),
+            transforms.RandomHorizontalFlip(),
+        ]
+        # PIL-based strong augment first
+        if strong_aug:
+            tf_list.append(AutoAugment(dataset_name))
+        # ToTensor + Normalize
+        tf_list += [
+            transforms.ToTensor(),
+            normalize,
+        ]
+        # tensor-based strong augment last
+        if strong_aug:
+            tf_list.append(Cutout(n_holes=1, length=16))
+    else:
+        # Test/eval: no randomness, only tensor & normalize
+        tf_list = [
+            transforms.ToTensor(),
+            normalize,
+        ]
 
     return transforms.Compose(tf_list)

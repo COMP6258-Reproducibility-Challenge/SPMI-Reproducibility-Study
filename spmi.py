@@ -144,7 +144,7 @@ class SPMI:
             losses.append((w * nll).sum())
 
         if not losses:
-            return torch.tensor(0.0, device=outputs.device)
+            return torch.tensor(0.0, device=outputs.device, requires_grad=True)
 
         loss = torch.stack(losses).mean()
         if self.use_ib_penalty:

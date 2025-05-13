@@ -1,4 +1,4 @@
-# cifar100exp_l5000_p03.py
+# cifar100_l5000_p005_exp.py
 
 import copy
 import csv
@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
-
+from torchvision import datasets
 from dataset import SPMIDataset, get_transforms
 from model import get_model
 from spmi import SPMI
@@ -34,7 +34,7 @@ def main():
     # ─── Hyperparameters (paper settings) ────────────────────────
     dataset_name   = 'cifar100'
     num_labeled    = 5000
-    partial_rate   = 0.3
+    partial_rate   = 0.05
     warmup_epochs  = 10
     num_epochs     = 500
     batch_size     = 256
@@ -86,16 +86,28 @@ def main():
         download=True,
         seed=42
     )
+    num_workers = min(8 * (n_gpus if use_multi_gpu else 1), 16)
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4 * (n_gpus if use_multi_gpu else 1),  # Scale workers with GPUs
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=(num_workers > 0),
+        prefetch_factor=2,
+        drop_last=True
     )
-    test_loader = train_dataset.get_test_loader(
+    test_transform = get_transforms(dataset_name, train=False, strong_aug=False)
+    test_dataset = datasets.CIFAR100(
+        './data', train=False, download=True, transform=test_transform
+    )
+    test_loader = DataLoader(
+        test_dataset,
         batch_size=batch_size,
-        num_workers=4 * (n_gpus if use_multi_gpu else 1),
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=(num_workers > 0)
     )
 
     unlabeled_idx = train_dataset.unlabeled_indices
@@ -167,7 +179,12 @@ def main():
               f"AvgUnlabCands: {avg_u:.2f}")
 
         # Record diagnostics
-        priors = spmi.class_priors.cpu().tolist()
+        # Handle DataParallel case for accessing class_priors
+        if use_multi_gpu:
+            priors = spmi.class_priors.cpu().tolist()
+        else:
+            priors = spmi.class_priors.cpu().tolist()
+        
         row = {
             'epoch': epoch,
             'loss': loss,
@@ -181,7 +198,7 @@ def main():
 
     # ─── Save diagnostics ────────────────────────────────────────
     keys = diagnostics[0].keys()
-    output_file = f'cifar100_l5000_p03_experiment_diagnostics_{"multi" if use_multi_gpu else "single"}gpu.csv'
+    output_file = f'cifar100_l5000_p005_experiment_diagnostics_{"multi" if use_multi_gpu else "single"}gpu.csv'
     with open(output_file, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()

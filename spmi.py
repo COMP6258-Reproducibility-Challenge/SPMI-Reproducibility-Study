@@ -94,36 +94,45 @@ class SPMI:
 
     def condense_labels(self, outputs, candidate_masks, is_labeled):
         """
-        Eq. 15: Compute G for each label in S_i; remove the one with min G if max G > τ.
+        Eq.15: remove the label with smallest G if the largest G > tau.
         """
         probs = F.softmax(outputs, dim=1)
         updated = candidate_masks.clone()
-
+        
         for i in range(outputs.size(0)):
             cands = candidate_masks[i].nonzero(as_tuple=True)[0]
             if cands.numel() <= 1:
                 continue
-
+                
+            # 1) Full-set distribution Q (normalized once)
             p_full = probs[i, cands]
             p_full = p_full / (p_full.sum() + 1e-10)
-
+            
             G_vals = []
             for j, k in enumerate(cands):
-                without = torch.cat([cands[:j], cands[j+1:]])
-                p_sub = probs[i, without]
-                p_sub = p_sub / (p_sub.sum() + 1e-10)
-                G = F.kl_div(torch.log(p_sub + 1e-10),
-                             p_full[torch.arange(p_full.size(0)) != j],
-                             reduction='sum').item()
+                # 2) Remaining distribution P (drop k, renormalize)
+                idx = torch.cat([cands[:j], cands[j+1:]])
+                p_remaining = probs[i, idx]
+                p_remaining = p_remaining / (p_remaining.sum() + 1e-10)
+                
+                # 3) Original distribution Q without k (NO renormalization!)
+                p_orig = torch.cat([p_full[:j], p_full[j+1:]])
+                
+                # 4) KL(P || Q) where Q is the original full-set probabilities
+                G = F.kl_div(
+                    torch.log(p_orig + 1e-10),
+                    p_remaining,
+                    reduction='sum'
+                ).item()
                 G_vals.append((G, k.item()))
-
-            maxG, _ = max(G_vals, key=lambda x: x[0])
+                
+            maxG, _ = max(G_vals, key=lambda x: x[0])  
             minG, min_k = min(G_vals, key=lambda x: x[0])
-            thresh = self.tau if is_labeled[i].item() == 1 else self.unlabeled_tau
-
+            thresh = self.tau if is_labeled[i].item() == 1 else self.unlabeled_tau 
+            
             if maxG > thresh and updated[i].sum() > 1:
                 updated[i, min_k] = 0
-
+                
         return updated
 
     def calculate_loss(self, outputs, candidate_masks):

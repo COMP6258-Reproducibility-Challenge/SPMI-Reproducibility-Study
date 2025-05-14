@@ -43,9 +43,9 @@ def main():
 
     # SPMI specific parameters from paper
     tau            = 3.0   # Paper uses τ = 3 for partial label data
-    unlabeled_tau  = 2.0   # Paper uses τ = 2 for unlabeled data
+    unlabeled_tau  = 1.0   # Paper uses τ = 2 for unlabeled data
     init_threshold = None  # Defaults to 1/C in SPMI
-    prior_alpha    = 1.0   # Paper mentions no EMA smoothing for 1.0
+    prior_alpha    = 0.9  # Paper mentions no EMA smoothing for 1.0
     use_ib_penalty = False # Paper doesn't use IB penalty for their main experiments
     ib_beta        = 0.0
 

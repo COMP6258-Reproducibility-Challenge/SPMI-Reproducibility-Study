@@ -31,27 +31,29 @@ def evaluate(model, loader, device):
     return 100 * correct / total
 
 def run_experiment(num_labeled, partial_rate, seed=42):
-    # ─── Hyperparameters ────────────────────────────────────────
+    # Hyperparameters
     dataset_name   = 'fashion_mnist'
     warmup_epochs  = 10
     num_epochs     = 500
     batch_size     = 256
-    lr             = 0.05  # Different LR for FMNIST
+    # Different LR for FMNIST
+    lr             = 0.05 
     weight_decay   = 5e-4
 
-    # SPMI-specific
+    # SPMI specific
     tau            = 3.0
     unlabeled_tau  = 2.0
     init_threshold = None
-    prior_alpha    = 0.9   # EMA smoothing for FMNIST
+    # EMA smoothing for FMNIST
+    prior_alpha    = 0.9   
     use_ib_penalty = True
     ib_beta        = 0.01
 
-    # ─── Device Setup ───────────────────────────────────────────
+    # Device Setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Running on {device}")
 
-    # ─── Data ───────────────────────────────────────────────────
+    # Data 
     transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
@@ -84,7 +86,7 @@ def run_experiment(num_labeled, partial_rate, seed=42):
         pin_memory=True
     )
 
-    # ─── Model & SPMI ───────────────────────────────────────────
+    # Model and SPMI
     model = get_model(
         name='lenet',
         num_classes=train_dataset.num_classes,
@@ -116,7 +118,7 @@ def run_experiment(num_labeled, partial_rate, seed=42):
 
     original_masks = train_dataset.get_candidate_masks().to(device)
     
-    # ─── Training Loop ──────────────────────────────────────────
+    # Training Loop
     diagnostics = []
     best_acc = 0.0
     
@@ -156,18 +158,18 @@ def run_experiment(num_labeled, partial_rate, seed=42):
             row[f'prior_{i}'] = p
         diagnostics.append(row)
 
-    # ─── Save Results ───────────────────────────────────────────
+    # Save Results
     output_file = f'fmnist_l{num_labeled}_p{partial_rate}_s{seed}.csv'
     with open(output_file, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=diagnostics[0].keys())
         writer.writeheader()
         writer.writerows(diagnostics)
 
-    print(f"▶ Results saved to {output_file}")
+    print(f" Results saved to {output_file}")
     return best_acc
 
 def main():
-    print("Running Fashion-MNIST experiments from the paper...")
+    print("Running Fashion-MNIST experiments from the paper")
     
     # Paper experiments
     experiments = [
@@ -181,7 +183,6 @@ def main():
         print(f"Experiment: l={num_labeled}, p={partial_rate}")
         print(f"{'='*50}")
         
-        # Run with different seeds for statistical significance
         accs = []
         for seed in [42]:
             print(f"\nRunning with seed {seed}...")

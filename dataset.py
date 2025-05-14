@@ -6,9 +6,8 @@ import numpy as np
 import random
 from PIL import Image
 from collections import Counter
-
+# Partial label dataset wrapper with global index return
 class SPMIDataset(Dataset):
-    """Partial‐label dataset wrapper with global‐index return."""
     def __init__(self,
                  dataset_name,
                  root='./data',
@@ -27,11 +26,11 @@ class SPMIDataset(Dataset):
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-        # 1) load raw arrays + test split
+        # load raw arrays + test split
         self._load_dataset(root)
-        # 2) split into labeled / unlabeled indices
+        # split into labeled / unlabeled indices
         self._split_data()
-        # 3) generate initial candidate sets for labeled
+        # generate initial candidate sets for labeled
         self._generate_partial_labels()
 
     def _load_dataset(self, root):
@@ -153,16 +152,15 @@ class SPMIDataset(Dataset):
                           num_workers=num_workers)
 
 
-# ------ transforms & augmentation helpers ------
-
+# transforms and augmentation helper
+#Cutout on a tensor CxHxW
 class Cutout:
-    """Cutout on a tensor image (C×H×W)."""
     def __init__(self, n_holes=1, length=16):
         self.n_holes = n_holes
         self.length  = length
 
     def __call__(self, img):
-        # expect img: Tensor[C, H, W]
+        # expect img Tensor[C, H, W]
         c, h, w = img.shape
         mask = torch.ones((h, w), dtype=img.dtype, device=img.device)
         for _ in range(self.n_holes):
@@ -189,14 +187,15 @@ class AutoAugment:
         return self.aug(img)
 
 def get_transforms(dataset_name, train=True, strong_aug=False):
-    # choose normalization & image size
+    # choose normalization and image size
+    # We use the dataset stats
     if dataset_name == 'fashion_mnist':
         mean, std = (0.5,), (0.5,)
         size, pad = 28, 4
     elif dataset_name in ['cifar10', 'cifar100']:
         mean, std = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
         size, pad = 32, 4
-    else:  # svhn
+    else:  # For SHVN
         mean, std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
         size, pad = 32, 4
 
@@ -207,19 +206,19 @@ def get_transforms(dataset_name, train=True, strong_aug=False):
             transforms.RandomCrop(size, padding=pad),
             transforms.RandomHorizontalFlip(),
         ]
-        # PIL-based strong augment first
+        # PIL based strong augment first
         if strong_aug:
             tf_list.append(AutoAugment(dataset_name))
-        # ToTensor + Normalize
+        # To Tensor + Normalize
         tf_list += [
             transforms.ToTensor(),
             normalize,
         ]
-        # tensor-based strong augment last
+        # tensor based strong augment last
         if strong_aug:
             tf_list.append(Cutout(n_holes=1, length=16))
     else:
-        # Test/eval: no randomness, only tensor & normalize
+        # Test/eval only tensor & normalize
         tf_list = [
             transforms.ToTensor(),
             normalize,

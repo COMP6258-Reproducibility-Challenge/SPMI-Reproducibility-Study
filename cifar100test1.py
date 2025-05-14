@@ -31,7 +31,7 @@ def evaluate(model, loader, device):
     return 100 * correct / total
 
 def main():
-    # ─── Hyperparameters (paper settings) ────────────────────────
+    # Hyperparameters frm the paper
     dataset_name   = 'cifar100'
     num_labeled    = 5000
     partial_rate   = 0.05
@@ -41,19 +41,20 @@ def main():
     lr             = 0.03
     weight_decay   = 5e-4
 
-    # SPMI-specific
+    # SPMI specific
     tau            = 3.0
     unlabeled_tau  = 2.0
-    init_threshold = None  # defaults to 1/C in SPMI
-    prior_alpha    = 1.0   # no EMA smoothing
+    # defaults to 1/C in SPMI
+    init_threshold = None 
+    # no EMA smoothing 
+    prior_alpha    = 1.0   
     use_ib_penalty = False
     ib_beta        = 0.0
 
-    # EMA model toggle (paper does not use EMA for inference)
+    # EMA model toggle paper does not use EMA for inference
     use_ema        = False
     ema_decay      = 0.999
 
-    # ─── Multi-GPU Setup ─────────────────────────────────────────
     # Check for available GPUs
     if torch.cuda.is_available():
         device = torch.device('cuda:0')
@@ -62,7 +63,7 @@ def main():
         if n_gpus >= 2:
             print("Using multi-GPU setup")
             use_multi_gpu = True
-            # Increase batch size proportionally for multi-GPU
+            # Increase batch size proportionally for multi GPU
             batch_size = batch_size * n_gpus
             print(f"Adjusted batch size to {batch_size} for {n_gpus} GPUs")
         else:
@@ -75,7 +76,7 @@ def main():
     
     print(f"Running on {device}\n")
 
-    # ─── Data ────────────────────────────────────────────────────
+    # Data
     transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
@@ -112,14 +113,14 @@ def main():
 
     unlabeled_idx = train_dataset.unlabeled_indices
 
-    # ─── Model & SPMI ────────────────────────────────────────────
+    # Model and SPMI
     model = get_model(
         name='wrn-28-8',
         num_classes=train_dataset.num_classes,
         in_channels=3
     ).to(device)
 
-    # ─── Apply DataParallel for multi-GPU ────────────────────────
+    # Apply DataParallel for multi GPU
     if use_multi_gpu:
         model = nn.DataParallel(model)
         print(f"Model wrapped with DataParallel across {n_gpus} GPUs")
@@ -150,10 +151,10 @@ def main():
     ema_model = create_ema_model(model) if use_ema else None
     original_masks = train_dataset.get_candidate_masks().to(device)
 
-    # ─── Diagnostics storage ────────────────────────────────────
+    # Diagnostics storage
     diagnostics = []
 
-    # ─── Training Loop ─────────────────────────────────────────
+    # Training Loop
     for epoch in range(1, num_epochs + 1):
         loss = spmi.train_epoch(
             train_loader,
@@ -196,7 +197,7 @@ def main():
             row[f'prior_{i}'] = p
         diagnostics.append(row)
 
-    # ─── Save diagnostics ────────────────────────────────────────
+    # Save diagnostics
     keys = diagnostics[0].keys()
     output_file = f'cifar100_l5000_p005_experiment_diagnostics_{"multi" if use_multi_gpu else "single"}gpu.csv'
     with open(output_file, 'w', newline='') as f:
@@ -204,8 +205,8 @@ def main():
         writer.writeheader()
         writer.writerows(diagnostics)
 
-    print(f"\n▶ Diagnostics saved to {output_file}")
-    print("▶ Paper experiment complete!")
+    print(f"\n Diagnostics saved to {output_file}")
+    print(" Paper experiment complete")
 
 if __name__ == '__main__':
     main()

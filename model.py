@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+# LeNet-5 for FMNIST (1x28x28 -> 10 classes)
 class LeNet(nn.Module):
-    """LeNet-5 for FMNIST (1x28x28 → 10 classes)."""
+
     def __init__(self, num_classes=10, in_channels=1):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, 6, kernel_size=5, padding=2)
@@ -36,9 +36,9 @@ class LeNet(nn.Module):
         x = F.relu(self.fc2(x))
         return self.fc3(x)
 
-
+# Tiny CNN baseline for CIFAR/SVHN (3x32x32 -> 10 classes) 
 class SimpleCNN(nn.Module):
-    """Tiny CNN baseline for CIFAR/SVHN (3x32x32 → 10 classes)."""
+    """"""
     def __init__(self, num_classes=10, in_channels=3):
         super().__init__()
         self.features = nn.Sequential(
@@ -71,9 +71,9 @@ class SimpleCNN(nn.Module):
         x = x.view(x.size(0), -1)
         return self.classifier(x)
 
-
+#WideResNet basic block
 class BasicBlock(nn.Module):
-    """WideResNet basic block."""
+
     def __init__(self, in_planes, out_planes, stride, drop_rate=0.0):
         super().__init__()
         self.equal_in_out = (in_planes == out_planes)
@@ -101,9 +101,8 @@ class BasicBlock(nn.Module):
 
         return out + shortcut
 
-
+# Stacking N BasicBlocks
 class NetworkBlock(nn.Module):
-    """Stack N BasicBlocks."""
     def __init__(self, num_layers, in_planes, out_planes, stride, drop_rate):
         super().__init__()
         layers = []
@@ -116,12 +115,10 @@ class NetworkBlock(nn.Module):
     def forward(self, x):
         return self.block(x)
 
-
+# WideResNet-D for CIFAR/SVHN/CIFAR-100
+# Depth = 6n+4, Widen factor k, dropout rate, and num_classes
 class WideResNet(nn.Module):
-    """
-    WideResNet-D for CIFAR/SVHN/CIFAR-100.
-    Depth = 6n+4, Widen factor k, dropout rate, and num_classes.
-    """
+
     def __init__(self, depth=28, widen_factor=2, drop_rate=0.0, num_classes=10, in_channels=3):
         super().__init__()
         assert (depth - 4) % 6 == 0, "Depth must be 6n+4"
@@ -162,18 +159,15 @@ class WideResNet(nn.Module):
         out = out.view(out.size(0), -1)
         return self.fc(out)
 
-
+# name: lenet, simplecnn, wrn-28-2, wrn-28-8
 def get_model(name: str, num_classes: int, **kwargs) -> nn.Module:
-    """
-    Factory to grab the right model.
-    name: 'lenet', 'simplecnn', 'wrn-28-2', 'wrn-28-8'
-    """
+
     if name.lower() == 'lenet':
         return LeNet(num_classes=num_classes, **kwargs)
     if name.lower() == 'simplecnn':
         return SimpleCNN(num_classes=num_classes, **kwargs)
     if name.lower().startswith('wrn'):
-        # e.g. 'wrn-28-2' or 'wrn-28-8'
+        #wrn-28-2 or wrn-28-8
         parts = name.split('-')
         depth = int(parts[1])
         wf = int(parts[2])

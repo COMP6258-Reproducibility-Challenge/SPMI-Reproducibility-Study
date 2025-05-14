@@ -11,13 +11,12 @@ from train import train
 from spmi import SPMI
 from debug_util import analyze_model_outputs
 
+# Run a mini version of the full training pipeline to verify all components work together
 def main():
-    """
-    Run a mini version of the full training pipeline to verify all components work together.
-    """
+
     print("Starting SPMI Integration Test")
     
-    # Configuration (small-scale for testing)
+    # Configuration small scale for testing
     dataset_name = 'cifar10'
     num_labeled = 1000  # Use more labeled examples to improve initial training
     batch_size = 64
@@ -97,14 +96,14 @@ def main():
     original_masks = dataset.get_candidate_masks().to(device)
     
     for epoch in range(num_epochs):
-        print(f"\n===== Epoch {epoch+1}/{num_epochs} =====")
+        print(f"\n Epoch {epoch+1}/{num_epochs} ")
         
         # Initialize unlabeled data after warmup
         if epoch == warmup_epochs:
             print(f"Epoch {epoch+1}: Initializing unlabeled data")
             spmi.initialize_unlabeled(dataloader, device)
             
-            # Analyze model outputs after initialization
+            # Analyse model outputs after initialization
             print("Analyzing model outputs after initialization...")
             analyze_model_outputs(model, dataloader, device, save_dir=f'debug_outputs/epoch_{epoch+1}_after_init')
         
@@ -127,19 +126,18 @@ def main():
             best_acc = test_accuracy
             print(f"New best accuracy: {best_acc:.2f}%")
             
-        # Analyze model outputs periodically
+        # Analyse model outputs periodically
         if (epoch + 1) % 2 == 0 or epoch == num_epochs - 1:
             print(f"Analyzing model outputs after epoch {epoch+1}...")
             analyze_model_outputs(model, dataloader, device, save_dir=f'debug_outputs/epoch_{epoch+1}')
     
     print(f"Integration test completed! Best test accuracy: {best_acc:.2f}%")
-    print("Performing final model analysis...")
+    print("Performing final model analysis")
     analyze_model_outputs(model, dataloader, device, save_dir='debug_outputs/final')
     analyze_model_outputs(model, test_loader, device, save_dir='debug_outputs/final_test', is_test_loader=True)
 
 
 def evaluate(model, test_loader, device):
-    """Evaluate model on test data"""
     model.eval()
     correct = 0
     total = 0

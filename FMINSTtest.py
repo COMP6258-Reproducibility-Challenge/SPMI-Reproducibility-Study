@@ -10,23 +10,16 @@ from spmi import SPMI
 from train import update_ema_model  # we will override create_ema_model here
 import csv
 
-
+#Create an EMA model by deep copying the original and freezing its parameters
 def create_ema_model(model):
-    """
-    Create an EMA (exponential moving average) model by deep-copying 
-    the original and freezing its parameters.
-    """
     ema = copy.deepcopy(model)
     for p in ema.parameters():
         p.requires_grad_(False)
     return ema
 
-
+# Evaluate model on test loader ; Handles both 2 tuple and 5 tuple formats 
+# Returns overall accuracy and perclass accuracies
 def evaluate_test(model, dataloader, device):
-    """
-    Evaluate model on test loader. Handles both 2-tuple and 5-tuple formats.
-    Returns overall accuracy and per-class accuracies.
-    """
     model.eval()
     correct = 0
     total = 0
@@ -75,7 +68,7 @@ def evaluate_test(model, dataloader, device):
 
 
 if __name__ == '__main__':
-    # --- Experiment settings (aligned with paper) ---
+    # EXP settings
     dataset_name = 'fashion_mnist'
     num_labeled = 1000
     partial_rate = 0.3
@@ -89,11 +82,11 @@ if __name__ == '__main__':
     use_ema = True
     ema_decay = 0.999
 
-    # --- Setup device ---
+    # Setup device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    # --- Prepare data ---
+    # Prepare data 
     transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
@@ -113,7 +106,7 @@ if __name__ == '__main__':
     )
     test_loader = train_dataset.get_test_loader(batch_size=batch_size, num_workers=2)
 
-    # --- Model setup using factory function ---
+    # Model setup using factory function 
     model = get_model(
         name='lenet',
         num_classes=train_dataset.num_classes,
@@ -121,7 +114,7 @@ if __name__ == '__main__':
     ).to(device)
     print(f"Model: LeNet with {train_dataset.num_classes} classes")
 
-    # --- SPMI setup ---
+    # SPMI setup 
     spmi = SPMI(
         model=model,
         num_classes=train_dataset.num_classes,
@@ -131,7 +124,7 @@ if __name__ == '__main__':
         ib_beta=0.01
     )
 
-    # --- Optimizer and scheduler ---
+    # Optimizer and scheduler
     optimizer = optim.SGD(
         model.parameters(),
         lr=learning_rate,
@@ -140,14 +133,14 @@ if __name__ == '__main__':
     )
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=0)
 
-    # --- EMA model ---
+    # EMA model
     ema_model = create_ema_model(model) if use_ema else None
 
-    # --- Diagnostics setup ---
+    # Diagnostics setup
     diagnostics = []
 
-    # --- Initial diagnostics ---
-    print(f"\n=== INITIAL STATE ===")
+    # Initial diagnostics
+    print(f"\n INITIAL STATE")
     masks = train_dataset.get_candidate_masks()
     labeled_idx = train_dataset.labeled_indices
     unlabeled_idx = train_dataset.unlabeled_indices
@@ -166,13 +159,13 @@ if __name__ == '__main__':
     # Capture original masks
     original_masks = train_dataset.get_candidate_masks().to(device)
 
-    # --- Training loop ---
+    # Training loop
     for epoch in range(num_epochs):
         print(f"\n{'='*50}")
         print(f"EPOCH {epoch+1}/{num_epochs}")
         print(f"{'='*50}")
 
-        # Train one epoch (positional args for original_masks)
+        # Train one epoch positional args for original_masks
         train_loss = spmi.train_epoch(
             train_loader,
             optimizer,
@@ -200,7 +193,7 @@ if __name__ == '__main__':
 
         # Detailed diagnostics for first few epochs
         if epoch < 5 or epoch == warmup_epochs:
-            print(f"\n--- Detailed Diagnostics ---")
+            print(f"\n Detailed Diagnostics ")
             current_masks = train_dataset.get_candidate_masks()
             labeled_masks = current_masks[labeled_idx]
             unlabeled_masks = current_masks[unlabeled_idx]
@@ -213,7 +206,7 @@ if __name__ == '__main__':
             all_cand_labeled = (labeled_masks.sum(dim=1) == train_dataset.num_classes).sum().item()
             all_cand_unlabeled = (unlabeled_masks.sum(dim=1) == train_dataset.num_classes).sum().item()
 
-            print(f"    Edge cases - No candidates L/U: {no_cand_labeled}/{no_cand_unlabeled}; "
+            print(f"Edge cases _> No candidates L/U: {no_cand_labeled}/{no_cand_unlabeled}; "
                   f"All candidates L/U: {all_cand_labeled}/{all_cand_unlabeled}")
             print(f"  Class priors: {[f'{p:.3f}' for p in spmi.class_priors.cpu().tolist()]}")
 
@@ -237,8 +230,8 @@ if __name__ == '__main__':
             row[f'prior_{k}'] = priors[k]
         diagnostics.append(row)
 
-    # --- Save results ---
-    print(f"\n=== EXPERIMENT COMPLETED ===")
+    # Save results 
+    print(f"\n EXPERIMENT COMPLETED ")
     print(f"Final Test Accuracy: {overall_acc:.2f}%")
 
     csv_file = f'spmi_diagnostics_{dataset_name}_l{num_labeled}_p{partial_rate}.csv'

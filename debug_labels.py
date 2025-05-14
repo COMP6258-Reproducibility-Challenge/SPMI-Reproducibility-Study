@@ -4,23 +4,22 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
 import os
-# Set matplotlib backend to a non-GUI backend to avoid Qt issues
 import matplotlib
-matplotlib.use('Agg')  # Use Agg backend (non-interactive)
+matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 from dataset import SPMIDataset, get_transforms
 from model import WideResNet
 from spmi import SPMI
 
+# Setup a small scale experiment for debugging label behavior
 def setup_simple_experiment(batch_size=64):
-    """
-    Setup a small-scale experiment for debugging label behavior
-    """
-    print("Setting up label diagnostics experiment...")
+
+    print("Setting up label diagnostics experiment")
     
-    # Use CIFAR-10 with a small number of labeled examples
+    # Use CIFAR10 with a small number of labeled examples
     dataset_name = 'cifar10'
-    num_labeled = 100  # Small number for easier visualization
+    # Small number of labelled
+    num_labeled = 100  
     
     # Device setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -46,7 +45,8 @@ def setup_simple_experiment(batch_size=64):
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
-        shuffle=False,  # No shuffling for consistent indices
+        # No shuffling for consistent indices
+        shuffle=False, 
         num_workers=2,
         drop_last=False
     )
@@ -62,14 +62,12 @@ def setup_simple_experiment(batch_size=64):
     spmi = SPMI(model, num_classes=10)
     
     return dataset, dataloader, model, optimizer, spmi, device
-
+# Visualize the candidate label sets for a few selected instances
 def visualize_candidate_labels(dataset, indices_to_track=None, save_dir='label_diagnostics'):
-    """
-    Visualize the candidate label sets for a few selected instances
-    """
+
     os.makedirs(save_dir, exist_ok=True)
     
-    # If no indices provided, select a few from labeled and unlabeled sets
+    # If no indices provided then we select a few from labeled and unlabeled sets
     if indices_to_track is None:
         # Get 5 labeled and 5 unlabeled indices
         labeled_indices = dataset.labeled_indices[:5]
@@ -116,11 +114,9 @@ def visualize_candidate_labels(dataset, indices_to_track=None, save_dir='label_d
     plt.tight_layout()
     plt.savefig(f"{save_dir}/candidate_sets.png")
 
+# Track how candidate labels evolve during training for specific instances
 def track_label_evolution(dataset, indices_to_track, spmi, dataloader, device, 
                          num_epochs=3, warmup_epochs=1, save_dir='label_diagnostics'):
-    """
-    Track how candidate labels evolve during training for specific instances
-    """
     os.makedirs(save_dir, exist_ok=True)
     
     # Store the original candidate sets
@@ -188,7 +184,7 @@ def track_label_evolution(dataset, indices_to_track, spmi, dataloader, device,
         plt.figure(figsize=(12, 4))
         
         # Calculate the number of epochs to plot
-        # Add 1 for initial state, add 1 if unlabeled and warmup for the post-initialization state
+        # Add 1 for initial state, add 1 if unlabeled and warmup for the post initialization state
         num_epochs_to_plot = num_epochs + 1
         if idx in dataset.unlabeled_indices and warmup_epochs < num_epochs:
             num_epochs_to_plot += 1
@@ -198,7 +194,8 @@ def track_label_evolution(dataset, indices_to_track, spmi, dataloader, device,
         
         # Fill in the matrix
         for epoch_idx, candidates in enumerate(history[idx]):
-            if epoch_idx < num_epochs_to_plot:  # Ensure we don't exceed matrix dimensions
+            # Ensure we dont exceed matrix dimensions
+            if epoch_idx < num_epochs_to_plot:  
                 for label in candidates:
                     evolution_matrix[epoch_idx, label] = 1
         

@@ -14,9 +14,7 @@ from model import WideResNet
 from spmi import SPMI
 
 def setup_simple_experiment(batch_size=16):
-    """
-    Setup a very small-scale experiment for quick diagnostics
-    """
+
     print("Setting up quick diagnostics experiment...")
     
     # Use CIFAR-10 with a tiny number of labeled examples
@@ -65,9 +63,6 @@ def setup_simple_experiment(batch_size=16):
     return dataset, dataloader, model, optimizer, spmi, device
 
 def quick_label_test(num_epochs=2, warmup_epochs=1):
-    """
-    Run a quick test of label handling in SPMI
-    """
     # Setup
     dataset, dataloader, model, optimizer, spmi, device = setup_simple_experiment()
     

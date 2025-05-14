@@ -10,8 +10,8 @@ from torch.cuda.amp import GradScaler, autocast
 from dataset import SPMIDataset, get_transforms
 from model import get_model
 
+#Dataset wrapper that applies both weak and strong augmentations
 class DualTransformDataset:
-    """Dataset wrapper that applies both weak and strong augmentations"""
     def __init__(self, dataset, transform_weak, transform_strong):
         self.dataset = dataset
         self.transform_weak = transform_weak
@@ -21,7 +21,7 @@ class DualTransformDataset:
         return len(self.dataset)
     
     def __getitem__(self, idx):
-        # Get original data (PIL image) but temporarily disable transform
+        # Get original data (PIL) but temporarily disable transform
         original_transform = self.dataset.transform
         self.dataset.transform = None
         
@@ -35,9 +35,8 @@ class DualTransformDataset:
         img_strong = self.transform_strong(img)
         
         return img_weak, img_strong, mask, target, idx, is_labeled
-
+# Optimized PRODEN + FixMatch
 class PRODEN_FixMatch_Fast:
-    """Optimized PRODEN + FixMatch implementation"""
     def __init__(self, model, candidate_labels, num_classes,
                  threshold=0.95, lam_ssl=1.0, device='cuda'):
         self.model = model.to(device)
@@ -47,14 +46,14 @@ class PRODEN_FixMatch_Fast:
         self.lam_ssl = lam_ssl
         self.ce = nn.CrossEntropyLoss(reduction='none')
         
-        # Pre-build candidate masks and soft labels on GPU
+        # Prebuild candidate masks and soft labels
         self.build_candidate_structures(candidate_labels)
-    
+    # Prebuild vectorized structures 
     def build_candidate_structures(self, candidate_labels):
-        """Pre-build vectorized structures for efficiency"""
+        
         n_samples = len(candidate_labels)
         
-        # Create candidate masks (n_samples, n_classes)
+        # Create candidate masks n_samples, n_classes
         self.candidate_masks = torch.zeros(n_samples, self.num_classes, 
                                          dtype=torch.bool, device=self.device)
         # Initialize soft labels
@@ -64,19 +63,18 @@ class PRODEN_FixMatch_Fast:
             if cands:
                 self.candidate_masks[i, cands] = True
                 self.q[i, cands] = 1.0 / len(cands)
-    
+    # Vectorized soft label update
     def update_soft_labels_vectorized(self, logits, indices):
-        """Vectorized soft label update - much faster!"""
         with torch.no_grad():
             probs = torch.softmax(logits, dim=1)
             
             # Extract relevant candidate masks
-            batch_masks = self.candidate_masks[indices]  # (batch_size, n_classes)
+            batch_masks = self.candidate_masks[indices]  # (batch_size , n_classes)
             
             # Compute probabilities for candidates only
             candidate_probs = probs * batch_masks.float()
             
-            # Renormalize (avoid division by zero)
+            # Renorm
             row_sums = candidate_probs.sum(dim=1, keepdim=True)
             row_sums = row_sums.clamp(min=1e-8)
             normalized_probs = candidate_probs / row_sums
@@ -84,8 +82,9 @@ class PRODEN_FixMatch_Fast:
             # Update soft labels for this batch
             self.q[indices] = normalized_probs
     
+    # Vectorized PRODEN loss computation
     def compute_proden_loss_vectorized(self, logits, indices, is_labeled):
-        """Vectorized PRODEN loss computation"""
+
         # Only process labeled samples
         labeled_mask = is_labeled.bool()
         if not labeled_mask.any():
@@ -105,7 +104,7 @@ class PRODEN_FixMatch_Fast:
         masked_log_probs = log_probs * candidate_masks.float()
         masked_q = q_labeled * candidate_masks.float()
         
-        # Compute weighted cross-entropy
+        # Compute weighted crossentropy
         losses = -(masked_q * masked_log_probs).sum(dim=1)
         
         return losses.mean()
@@ -119,8 +118,8 @@ class PRODEN_FixMatch_Fast:
             imgs_weak, imgs_strong, masks, targets, indices, is_labeled = batch
             imgs_weak = imgs_weak.to(self.device, non_blocking=True)
             imgs_strong = imgs_strong.to(self.device, non_blocking=True)
-            indices = indices.to(self.device, non_blocking=True)  # Keep on GPU!
-            is_labeled = is_labeled.to(self.device, non_blocking=True)  # Keep on GPU!
+            indices = indices.to(self.device, non_blocking=True) 
+            is_labeled = is_labeled.to(self.device, non_blocking=True)  
             
             # Use mixed precision if scaler provided
             if scaler is not None:
@@ -161,10 +160,10 @@ class PRODEN_FixMatch_Fast:
                 # Update soft labels using weak augmentation
                 self.update_soft_labels_vectorized(logits_weak, indices)
                 
-                # Compute PRODEN loss (only on labeled data)
+                # Compute PRODEN loss (only labeled)
                 sup_loss = self.compute_proden_loss_vectorized(logits_weak, indices, is_labeled)
                 
-                # Compute FixMatch SSL loss (on all data)
+                # Compute FixMatch SSL loss (all data)
                 with torch.no_grad():
                     probs_weak = torch.softmax(logits_weak, dim=1)
                     max_probs, pseudo_labels = probs_weak.max(dim=1)
@@ -224,7 +223,7 @@ def main():
     
     # Performance optimizations
     if torch.cuda.is_available():
-        # Enable TensorFloat-32 for faster training on RTX 30xx/40xx
+        # Enable TensorFloat32 for faster training 
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
@@ -264,7 +263,7 @@ def main():
         drop_last=True  # Ensures consistent batch sizes
     )
     
-    # Test loader (apply weak transform)
+    # Test loader apply weak transform
     test_dataset = dataset.test_ds
     test_dataset.transform = transform_weak
     test_loader = DataLoader(
@@ -285,7 +284,7 @@ def main():
     
     model = get_model(name=model_name, num_classes=dataset.num_classes, in_channels=in_ch)
     
-    # Compile model for faster execution (PyTorch 2.0+)
+    # Compile model for faster execution
     if args.compile and hasattr(torch, 'compile'):
         print("Compiling model...")
         model = torch.compile(model, mode="reduce-overhead")
@@ -315,7 +314,7 @@ def main():
         device=args.device
     )
     
-    print("Starting optimized PRODEN + FixMatch training...")
+    print("Starting optimized PRODEN + FixMatch training")
     print(f"Settings: {args}")
     print(f"Using mixed precision: {scaler is not None}")
     print(f"Number of workers: {num_workers}")

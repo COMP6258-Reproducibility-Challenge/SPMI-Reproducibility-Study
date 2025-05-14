@@ -31,7 +31,7 @@ def evaluate(model, loader, device):
     return 100 * correct / total
 
 def run_experiment(num_labeled, partial_rate, seed=42):
-    # ─── Hyperparameters ────────────────────────────────────────
+    # Hyperparameters frm the paper
     dataset_name   = 'svhn'
     warmup_epochs  = 10
     num_epochs     = 500
@@ -39,19 +39,20 @@ def run_experiment(num_labeled, partial_rate, seed=42):
     lr             = 0.03
     weight_decay   = 5e-4
 
-    # SPMI-specific
+    # SPMI specific
     tau            = 3.0
     unlabeled_tau  = 2.0
     init_threshold = None
-    prior_alpha    = 0.9   # EMA smoothing
+    # EMA smoothing
+    prior_alpha    = 0.9   
     use_ib_penalty = True
     ib_beta        = 0.01
 
-    # ─── Device Setup ───────────────────────────────────────────
+    # Device Setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Running on {device}")
 
-    # ─── Data ───────────────────────────────────────────────────
+    # Data
     transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
@@ -84,7 +85,7 @@ def run_experiment(num_labeled, partial_rate, seed=42):
         pin_memory=True
     )
 
-    # ─── Model & SPMI ───────────────────────────────────────────
+    # Model amd SPMI
     model = get_model(
         name='wrn-28-2',
         num_classes=train_dataset.num_classes,
@@ -116,7 +117,7 @@ def run_experiment(num_labeled, partial_rate, seed=42):
 
     original_masks = train_dataset.get_candidate_masks().to(device)
     
-    # ─── Training Loop ──────────────────────────────────────────
+    # Training Loop
     diagnostics = []
     best_acc = 0.0
     
@@ -156,18 +157,18 @@ def run_experiment(num_labeled, partial_rate, seed=42):
             row[f'prior_{i}'] = p
         diagnostics.append(row)
 
-    # ─── Save Results ───────────────────────────────────────────
+    # Save the Results
     output_file = f'svhn_l{num_labeled}_p{partial_rate}_s{seed}.csv'
     with open(output_file, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=diagnostics[0].keys())
         writer.writeheader()
         writer.writerows(diagnostics)
 
-    print(f"▶ Results saved to {output_file}")
+    print(f"Results saved to {output_file}")
     return best_acc
 
 def main():
-    print("Running SVHN experiments from the paper...")
+    print("Running SVHN experiments from the paper")
     
     # Paper experiments
     experiments = [

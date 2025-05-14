@@ -11,35 +11,40 @@ class SPMI:
                  prior_alpha: float = 0.9,
                  use_ib_penalty: bool = True,
                  ib_beta: float = 0.01):
-        """
-        model:          your nn.Module
-        num_classes:    C
-        tau:            threshold for partial‐label data (condensation)
-        unlabeled_tau:  threshold for unlabeled data (condensation)
-        init_threshold: threshold for initialization (>f_k > init_threshold);
-                        if None, defaults to 1/C
-        prior_alpha:    EMA smoothing factor for class-priors (0 < alpha < 1)
-        use_ib_penalty: whether to add β·H(f(x)) to the loss
-        ib_beta:        coefficient for IB penalty
-        """
+        
+        
+  
+
+    
+        
+        
+ 
+        
+        # ib_beta:        coefficient for IB penalty
+        # nn.Module
         self.model = model
+        # C
         self.num_classes = num_classes
+        # threshold for partial label data -> condensation
         self.tau = tau
+        # threshold for unlabeled data (condensation)
         self.unlabeled_tau = unlabeled_tau
+        # threshold for initialization (>fk > init_threshold);
         self.init_threshold = init_threshold or (1.0 / num_classes)
+        #if None then defaults to 1/C
         self.prior_alpha = prior_alpha
+        # EMA smoothing factor for class priors (0 < alpha < 1)
         self.use_ib_penalty = use_ib_penalty
+        # whether to add β·H(f(x)) to the loss since its kind of unclear
         self.ib_beta = ib_beta
 
-        # initialize uniform priors μ_j = 1/C
+        # initialize uniform priors uj = 1/C
         device = next(model.parameters()).device
         self.class_priors = torch.full((num_classes,), 1.0/num_classes, device=device)
-
+    
+    # Eq3 with raised threshold
+    # For each unlabeled xi -> Add k iff softmax[fk(xi)] > init_threshold
     def initialize_unlabeled(self, dataloader, device):
-        """
-        Eq. 3 (with raised threshold): For each *unlabeled* x_i,
-        add k iff softmax[f_k(x_i)] > init_threshold.
-        """
         self.model.eval()
         dataset = dataloader.dataset
         with torch.no_grad():
@@ -56,46 +61,39 @@ class SPMI:
                         topk = torch.topk(probs[i], k=2).indices.tolist()
                         candidates = topk
                     dataset.update_candidate_labels(sample_idx.item(), candidates)
-
+    # Eq11 Add k iff q(k|zi) > uk, but for labeled only if in original_masks
+    # The mask is vectorized
     def expand_labels(self, outputs, candidate_masks, is_labeled, indices, original_masks=None):
-        """
-        Eq. 11: Add k iff q(k|z_i) > μ_k,
-        but for labeled only if in original_masks.
-        This version avoids CUDA boolean ambiguities by vectorizing the mask.
-        """
-        probs = F.softmax(outputs, dim=1)          # [B, C]
-        updated = candidate_masks.clone()          # [B, C]
+        probs = F.softmax(outputs, dim=1)          # [B , C]
+        updated = candidate_masks.clone()          # [B , C]
 
         for i, sample_idx in enumerate(indices):
-            # 1) Get the row of probabilities and existing mask
+            # Get the row of probabilities and existing mask
             row_probs = probs[i]                   # shape [C]
             row_taken = updated[i].bool()          # shape [C]
 
-            # 2) Build a mask of labels to skip:
-            #    skip if already taken OR prob <= prior
+            # Build a mask of labels to skip:
+            #  skip if already taken or if prob <= prior
             skip_mask = row_taken | (row_probs <= self.class_priors)
 
-            # 3) The candidates to add are where skip_mask is False
+            # The candidates to add are where skip_mask is false
             add_ks = torch.nonzero(~skip_mask, as_tuple=False).view(-1)
 
-            # 4) For each such k, apply the labeled/unlabeled logic
+            # For each such k, apply the labeled or unlabeled logic
             for k in add_ks.tolist():
                 if is_labeled[i].item() == 1:
                     # only expand within the original labeled mask
                     if original_masks is None or original_masks[sample_idx.item(), k].item():
                         updated[i, k] = 1
                 else:
-                    # for unlabeled, always add
+                    # for unlabeled always add
                     updated[i, k] = 1
 
         return updated
 
-
-
+    # Eq15 remove the label with smallest G if the largest G > tau
     def condense_labels(self, outputs, candidate_masks, is_labeled):
-        """
-        Eq.15: remove the label with smallest G if the largest G > tau.
-        """
+
         probs = F.softmax(outputs, dim=1)
         updated = candidate_masks.clone()
         
@@ -104,21 +102,21 @@ class SPMI:
             if cands.numel() <= 1:
                 continue
                 
-            # 1) Full-set distribution Q (normalized once)
+            # Full set distribution Q (normalized once)
             p_full = probs[i, cands]
             p_full = p_full / (p_full.sum() + 1e-10)
             
             G_vals = []
             for j, k in enumerate(cands):
-                # 2) Remaining distribution P (drop k, renormalize)
+                # Remaining distribution P (drop k , renormalize)
                 idx = torch.cat([cands[:j], cands[j+1:]])
                 p_remaining = probs[i, idx]
                 p_remaining = p_remaining / (p_remaining.sum() + 1e-10)
                 
-                # 3) Original distribution Q without k (NO renormalization!)
+                # Original distribution Q without k 
                 p_orig = torch.cat([p_full[:j], p_full[j+1:]])
                 
-                # 4) KL(P || Q) where Q is the original full-set probabilities
+                # KL(P || Q) where Q is the original full set probabilities
                 G = F.kl_div(
                     torch.log(p_orig + 1e-10),
                     p_remaining,
@@ -135,11 +133,10 @@ class SPMI:
                 
         return updated
 
+    # Eq1 and 2 Weighted negative log‐likelihood over candidates
+    # Optional IB penalty if use_ib_penalty=True
     def calculate_loss(self, outputs, candidate_masks):
-        """
-        Eq. 1–2: Weighted negative log‐likelihood over candidates.
-        Optional IB penalty if use_ib_penalty=True.
-        """
+
         logp = F.log_softmax(outputs, dim=1)
         p = logp.exp()
         losses = []
@@ -162,10 +159,9 @@ class SPMI:
 
         return loss
 
+    # Smoothed eq16 EMA update of u over all samples every epoch
     def update_class_priors(self, dataloader, device):
-        """
-        Smoothed Eq. 16: EMA update of μ over all samples every epoch.
-        """
+
         self.model.eval()
         total = torch.zeros(self.num_classes, device=device)
         count = 0
@@ -181,7 +177,12 @@ class SPMI:
         # EMA smoothing
         self.class_priors = self.prior_alpha * self.class_priors + (1 - self.prior_alpha) * new_priors
         return self.class_priors
-
+    
+    # Warmup on labelled only
+    # At epoch == warmup_epochs -> initialize_unlabeled
+    # Each batch -> compute loss, backward, step
+    # After batch (if past warmup)- > expand+condense+update dataset
+    # At end ->  update_class_priors with EMA smoothing
     def train_epoch(self,
                     dataloader,
                     optimizer,
@@ -189,13 +190,7 @@ class SPMI:
                     epoch: int,
                     warmup_epochs: int,
                     original_masks=None):
-        """
-        1) Warm-up on labeled only
-        2) At epoch == warmup_epochs: initialize_unlabeled
-        3) Each batch: compute loss, backward, step
-        4) After batch (if past warm-up): expand+condense+update dataset
-        5) At end: update_class_priors with EMA smoothing
-        """
+
         self.model.train()
         warmup = (epoch < warmup_epochs)
 
@@ -239,6 +234,6 @@ class SPMI:
             running_loss += loss.item()
             n_batches += 1
 
-        # EMA-smoothed prior update
+        # EMA smoothed prior update
         self.update_class_priors(dataloader, device)
         return running_loss / max(n_batches, 1)

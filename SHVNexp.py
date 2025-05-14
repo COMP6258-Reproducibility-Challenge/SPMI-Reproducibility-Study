@@ -30,29 +30,51 @@ def evaluate(model, loader, device):
             total   += targets.size(0)
     return 100 * correct / total
 
-def run_experiment(num_labeled, partial_rate, seed=42):
-    # Hyperparameters frm the paper
+def main():
+    # Hyperparameters from the paper for SVHN
     dataset_name   = 'svhn'
-    warmup_epochs  = 10
-    num_epochs     = 500
-    batch_size     = 256
-    lr             = 0.03
-    weight_decay   = 5e-4
+    num_labeled    = 1000  # Paper uses 1000 for SVHN
+    partial_rate   = 0.3   # Paper uses 0.3 for SVHN
+    warmup_epochs  = 10    # Paper uses warm-up period
+    num_epochs     = 500   # Paper uses 500 epochs
+    batch_size     = 256   # Paper uses batch size 256
+    lr             = 0.03  # Paper uses learning rate 0.03
+    weight_decay   = 5e-4  # Paper uses weight decay 5e-4
 
-    # SPMI specific
-    tau            = 3.0
-    unlabeled_tau  = 2.0
-    init_threshold = None
-    # EMA smoothing
-    prior_alpha    = 0.9   
-    use_ib_penalty = True
-    ib_beta        = 0.01
+    # SPMI specific parameters from paper
+    tau            = 3.0   # Paper uses τ = 3 for partial label data
+    unlabeled_tau  = 2.0   # Paper uses τ = 2 for unlabeled data
+    init_threshold = None  # Defaults to 1/C in SPMI
+    prior_alpha    = 1.0   # Paper mentions no EMA smoothing for 1.0
+    use_ib_penalty = False # Paper doesn't use IB penalty for their main experiments
+    ib_beta        = 0.0
 
-    # Device Setup
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Running on {device}")
+    # EMA model - paper doesn't use EMA for inference
+    use_ema        = False
+    ema_decay      = 0.999
 
-    # Data
+    # Check for available GPUs
+    if torch.cuda.is_available():
+        device = torch.device('cuda:0')
+        n_gpus = torch.cuda.device_count()
+        print(f"Found {n_gpus} GPU(s)")
+        if n_gpus >= 2:
+            print("Using multi-GPU setup")
+            use_multi_gpu = True
+            # Increase batch size proportionally for multi GPU
+            batch_size = batch_size * n_gpus
+            print(f"Adjusted batch size to {batch_size} for {n_gpus} GPUs")
+        else:
+            print("Only 1 GPU available, using single GPU")
+            use_multi_gpu = False
+    else:
+        device = torch.device('cpu')
+        use_multi_gpu = False
+        print("CUDA not available, using CPU")
+    
+    print(f"Running on {device}\n")
+
+    # Data - SVHN specific configuration
     transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
@@ -61,18 +83,19 @@ def run_experiment(num_labeled, partial_rate, seed=42):
         partial_rate=partial_rate,
         transform=transform_train,
         download=True,
-        seed=seed
+        seed=42
     )
-    
+    num_workers = min(8 * (n_gpus if use_multi_gpu else 1), 16)
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=(num_workers > 0),
+        prefetch_factor=2,
         drop_last=True
     )
-    
     test_transform = get_transforms(dataset_name, train=False, strong_aug=False)
     test_dataset = datasets.SVHN(
         './data', split='test', download=True, transform=test_transform
@@ -81,16 +104,24 @@ def run_experiment(num_labeled, partial_rate, seed=42):
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=4,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=(num_workers > 0)
     )
 
-    # Model amd SPMI
+    unlabeled_idx = train_dataset.unlabeled_indices
+
+    # Model - Paper uses WRN-28-2 for SVHN (same as CIFAR-10)
     model = get_model(
         name='wrn-28-2',
         num_classes=train_dataset.num_classes,
-        in_channels=3
+        in_channels=3  # SVHN is RGB (3 channels)
     ).to(device)
+
+    # Apply DataParallel for multi GPU
+    if use_multi_gpu:
+        model = nn.DataParallel(model)
+        print(f"Model wrapped with DataParallel across {n_gpus} GPUs")
 
     spmi = SPMI(
         model=model,
@@ -115,12 +146,13 @@ def run_experiment(num_labeled, partial_rate, seed=42):
         eta_min=0
     )
 
+    ema_model = create_ema_model(model) if use_ema else None
     original_masks = train_dataset.get_candidate_masks().to(device)
-    
-    # Training Loop
+
+    # Diagnostics storage
     diagnostics = []
-    best_acc = 0.0
-    
+
+    # Training Loop
     for epoch in range(1, num_epochs + 1):
         loss = spmi.train_epoch(
             train_loader,
@@ -132,75 +164,48 @@ def run_experiment(num_labeled, partial_rate, seed=42):
         )
         scheduler.step()
 
-        acc = evaluate(model, test_loader, device)
-        best_acc = max(best_acc, acc)
+        if use_ema:
+            update_ema_model(model, ema_model, ema_decay)
 
-        # Progress monitoring
-        if epoch % 50 == 0 or epoch == num_epochs:
-            unlabeled_idx = train_dataset.unlabeled_indices
-            u_masks = train_dataset.get_candidate_masks()[unlabeled_idx]
-            avg_u = u_masks.sum(dim=1).float().mean().item()
-            
-            print(f"[Epoch {epoch:03d}/{num_epochs}] "
-                  f"Loss: {loss:.4f}  Acc: {acc:.2f}%  "
-                  f"Best: {best_acc:.2f}%  AvgUnlabCands: {avg_u:.2f}")
+        eval_model = ema_model or model
+        acc = evaluate(eval_model, test_loader, device)
+
+        # Minimal terminal output
+        u_masks = train_dataset.get_candidate_masks()[unlabeled_idx]
+        avg_u = u_masks.sum(dim=1).float().mean().item()
+        print(f"[Epoch {epoch:03d}/{num_epochs}] "
+              f"Loss: {loss:.4f}  Acc: {acc:.2f}%  "
+              f"AvgUnlabCands: {avg_u:.2f}")
 
         # Record diagnostics
-        priors = spmi.class_priors.cpu().tolist()
+        # Handle DataParallel case for accessing class_priors
+        if use_multi_gpu:
+            priors = spmi.class_priors.cpu().tolist()
+        else:
+            priors = spmi.class_priors.cpu().tolist()
+        
         row = {
             'epoch': epoch,
             'loss': loss,
             'test_acc': acc,
-            'best_acc': best_acc
+            'avg_unlabeled_cands': avg_u
         }
+        # Include class priors
         for i, p in enumerate(priors):
             row[f'prior_{i}'] = p
         diagnostics.append(row)
 
-    # Save the Results
-    output_file = f'svhn_l{num_labeled}_p{partial_rate}_s{seed}.csv'
+    # Save diagnostics
+    keys = diagnostics[0].keys()
+    output_file = f'svhn_paper_experiment_diagnostics_l{num_labeled}_p{partial_rate}_{"multi" if use_multi_gpu else "single"}gpu.csv'
     with open(output_file, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=diagnostics[0].keys())
+        writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(diagnostics)
 
-    print(f"Results saved to {output_file}")
-    return best_acc
-
-def main():
-    print("Running SVHN experiments from the paper")
-    
-    # Paper experiments
-    experiments = [
-        (1000, 0.3),  # Table 1
-    ]
-    
-    results = {}
-    for num_labeled, partial_rate in experiments:
-        print(f"\n{'='*50}")
-        print(f"Experiment: l={num_labeled}, p={partial_rate}")
-        print(f"{'='*50}")
-        
-        # Run with different seeds for statistical significance
-        accs = []
-        for seed in [42]:
-            print(f"\nRunning with seed {seed}...")
-            acc = run_experiment(num_labeled, partial_rate, seed)
-            accs.append(acc)
-        
-        mean_acc = sum(accs) / len(accs)
-        std_acc = (sum((x - mean_acc)**2 for x in accs) / len(accs)) ** 0.5
-        
-        results[(num_labeled, partial_rate)] = (mean_acc, std_acc)
-        print(f"\nResults for l={num_labeled}, p={partial_rate}:")
-        print(f"Mean Accuracy: {mean_acc:.2f}% ± {std_acc:.2f}%")
-    
-    # Print summary
-    print(f"\n{'='*60}")
-    print("SUMMARY - SVHN Results")
-    print(f"{'='*60}")
-    for (num_labeled, partial_rate), (mean_acc, std_acc) in results.items():
-        print(f"l={num_labeled}, p={partial_rate}: {mean_acc:.2f}% ± {std_acc:.2f}%")
+    print(f"\nDiagnostics saved to {output_file}")
+    print("Experiment complete")
+    print(f"Final accuracy: {acc:.2f}%")
 
 if __name__ == '__main__':
     main()

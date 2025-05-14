@@ -1,4 +1,4 @@
-# cifar100_l5000_p005_exp.py
+# cifar100_exp.py
 
 import copy
 import csv
@@ -31,28 +31,27 @@ def evaluate(model, loader, device):
     return 100 * correct / total
 
 def main():
-    # Hyperparameters frm the paper
+    # Hyperparameters from the paper for CIFAR-100
     dataset_name   = 'cifar100'
-    num_labeled    = 5000
-    partial_rate   = 0.05
-    warmup_epochs  = 10
-    num_epochs     = 500
-    batch_size     = 256
-    lr             = 0.03
-    weight_decay   = 5e-4
+    num_labeled    = 5000  # Paper shows results for 5000 and 10000, starting with 5000
+    partial_rate   = 0.05  # Paper uses 0.05 for CIFAR-100 (much lower than other datasets)
+    warmup_epochs  = 10    # Paper uses warm-up period
+    num_epochs     = 500   # Paper uses 500 epochs
+    batch_size     = 256   # Paper uses batch size 256
+    lr             = 0.03  # Paper uses learning rate 0.03
+    weight_decay   = 5e-4  # Paper uses weight decay 5e-4
 
-    # SPMI specific
-    tau            = 3.0
-    unlabeled_tau  = 2.0
-    # defaults to 1/C in SPMI
-    init_threshold = None 
-    # no EMA smoothing 
-    prior_alpha    = 1.0   
-    use_ib_penalty = False
+    # SPMI specific parameters from paper
+    tau            = 3.0   # Paper uses τ = 3 for partial label data
+    unlabeled_tau  = 2.0   # Paper uses τ = 2 for unlabeled data
+    init_threshold = None  # Defaults to 1/C in SPMI
+    prior_alpha    = 1.0   # Paper mentions no EMA smoothing for 1.0
+    use_ib_penalty = False # Paper doesn't use IB penalty for their main experiments
     ib_beta        = 0.0
 
-    # EMA model toggle paper does not use EMA for inference
-    use_ema        = False
+    # EMA model - paper doesn't use EMA for inference on most datasets
+    # But mentions using EMA for updating pseudo candidate labels on CIFAR-100
+    use_ema        = False  # For inference
     ema_decay      = 0.999
 
     # Check for available GPUs
@@ -76,7 +75,7 @@ def main():
     
     print(f"Running on {device}\n")
 
-    # Data
+    # Data - CIFAR-100 specific configuration
     transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
@@ -113,11 +112,11 @@ def main():
 
     unlabeled_idx = train_dataset.unlabeled_indices
 
-    # Model and SPMI
+    # Model - Paper uses WRN-28-8 for CIFAR-100 (wider than CIFAR-10's WRN-28-2)
     model = get_model(
         name='wrn-28-8',
         num_classes=train_dataset.num_classes,
-        in_channels=3
+        in_channels=3  # CIFAR-100 is RGB (3 channels)
     ).to(device)
 
     # Apply DataParallel for multi GPU
@@ -192,21 +191,22 @@ def main():
             'test_acc': acc,
             'avg_unlabeled_cands': avg_u
         }
-        # include class priors
+        # Include class priors (100 classes for CIFAR-100)
         for i, p in enumerate(priors):
             row[f'prior_{i}'] = p
         diagnostics.append(row)
 
     # Save diagnostics
     keys = diagnostics[0].keys()
-    output_file = f'cifar100_l5000_p005_experiment_diagnostics_{"multi" if use_multi_gpu else "single"}gpu.csv'
+    output_file = f'cifar100_paper_experiment_diagnostics_l{num_labeled}_p{partial_rate}_{"multi" if use_multi_gpu else "single"}gpu.csv'
     with open(output_file, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(diagnostics)
 
-    print(f"\n Diagnostics saved to {output_file}")
-    print(" Paper experiment complete")
+    print(f"\nDiagnostics saved to {output_file}")
+    print("Experiment complete")
+    print(f"Final accuracy: {acc:.2f}%")
 
 if __name__ == '__main__':
     main()

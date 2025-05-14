@@ -65,7 +65,7 @@ def main():
     parser.add_argument('--device',     type=str,   default='cuda' if torch.cuda.is_available() else 'cpu')
     args = parser.parse_args()
 
-    # --- Transforms & DataLoaders ---
+    # Transforms and DataLoaders
     train_tf = get_transforms(args.dataset, strong_aug=True)
     test_tf  = get_transforms(args.dataset, strong_aug=False)
 
@@ -90,7 +90,7 @@ def main():
         num_workers=4
     )
 
-    # --- Model & SPMI setup ---
+    # Model and SPMI setup 
     if args.dataset == 'fashion_mnist':
         model_name, in_ch = 'lenet', 1
     elif args.dataset in ['cifar10', 'svhn']:
@@ -124,7 +124,7 @@ def main():
     # capture original (labeled) masks once
     original_masks = dataset.get_candidate_masks().to(args.device)
 
-    # --- Training Loop ---
+    # Training loop
     for epoch in range(args.epochs):
         loss = spmi.train_epoch(
             dataloader=train_loader,

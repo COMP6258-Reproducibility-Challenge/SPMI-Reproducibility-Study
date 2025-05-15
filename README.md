@@ -3,7 +3,7 @@
 > **Learning with Partial-Label and Unlabeled Data: A Uniform Treatment for Supervision Redundancy and Insufficiency**  
 > *Liu et al.*, ICML 2024  
 > ---------------------------  
-> **This repository** contains our reproduction of SPMI, a mutual-information-based framework for semi-supervised partial-label learning. We rigorously re-implement, debug, and benchmark the method as part of the COMP6258 Reproducibility Challenge.
+> **This repository** contains our reproduction of SPMI, a mutual-information-based framework for semi-supervised partial-label learning. 
 
 ---
 
@@ -21,14 +21,7 @@
 - [Usage](#usage)  
   - [Running SPMI Experiments](#running-spmi-experiments)  
   - [Running Baseline (PRODEN+FixMatch)](#running-baseline-prodenfixmatch)  
-- [Results & Reproducibility Analysis](#results--reproducibility-analysis)  
-  - [Key Findings](#key-findings)  
-  - [What We Learned](#what-we-learned)  
-  - [Recommendations](#recommendations)  
 - [Dependencies](#dependencies)  
-- [Citation](#citation)  
-- [License](#license)  
-
 ---
 
 ## Overview
@@ -114,7 +107,6 @@ and measure their individual contributions on each dataset.
 
 ### Running SPMI Experiments
 
-```bash
 # Example: Fashion-MNIST
 python fminstexp.py
 
@@ -129,6 +121,11 @@ python ablation.py --dataset fmnist --epochs 500
 
 # For Fixmatch bash script with output redirect (output redir is in the bash file)
 bash run_proden_experiments.sh
+
+## Dependencies
+run requirements.txt
+
+pip install -r requirements.txt
 
 
 

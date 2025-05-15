@@ -38,7 +38,7 @@ def main():
     warmup_epochs  = 10    # warm-up period
     num_epochs     = 500   #  500 epochs
     batch_size     = 256   # batch size 256
-    lr             = 0.03  # learning rate 0.03
+    lr             = 0.01  # learning rate 0.03
     weight_decay   = 5e-4  #weight decay 5e-4
 
     # SPMI specific parameters from paper

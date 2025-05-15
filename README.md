@@ -51,9 +51,6 @@ The authors claim SPMI outperforms composite baselines (PRODEN + FixMatch), but 
 ├── logs/                    # Logs & metrics
 └── README.md                # This document
 
-
----
-
 ## Implementation Details
 
 ### Key Components

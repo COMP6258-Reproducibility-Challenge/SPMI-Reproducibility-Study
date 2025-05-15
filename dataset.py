@@ -206,8 +206,8 @@ def get_transforms(dataset_name, train=True, strong_aug=False):
             transforms.RandomCrop(size, padding=pad),
             transforms.RandomHorizontalFlip(),
         ]
-        # PIL based strong augment first
-        if strong_aug:
+        # PIL based strong augment first exclude AutoAugment for Fashion-MNIST
+        if strong_aug and dataset_name != 'fashion_mnist':
             tf_list.append(AutoAugment(dataset_name))
         # To Tensor + Normalize
         tf_list += [

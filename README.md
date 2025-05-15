@@ -44,10 +44,10 @@ The authors claim SPMI outperforms composite baselines (PRODEN + FixMatch), but 
 ├── ablation.py # Ablation-study harness
 ├── fminstexp.py # Fashion-MNIST
 ├── cifar10exp.py # CIFAR-10
-└── cifar100test1.y # CIFAR100
-└── cifar100test2.py # CIFAR100
+├── cifar100test1.y # CIFAR100
+├── cifar100test2.py # CIFAR100
 ├── SHVNexp.py # SVHN
-└── ProdenFixmatch.py# PRODEN+FixMatch baseline
+├── ProdenFixmatch.py# PRODEN+FixMatch baseline
 ├── logs/ # Logs & metrics
 └── README.md # This document
 

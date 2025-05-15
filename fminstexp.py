@@ -33,23 +33,23 @@ def evaluate(model, loader, device):
 def main():
     # Hyperparameters from the paper for Fashion-MNIST
     dataset_name   = 'fashion_mnist'
-    num_labeled    = 1000  # Paper uses 1000 and 4000, starting with 1000
-    partial_rate   = 0.3   # Paper uses 0.3 for F-MNIST
-    warmup_epochs  = 10    # Paper uses warm-up period
-    num_epochs     = 500   # Paper uses 500 epochs
-    batch_size     = 256   # Paper uses batch size 256
-    lr             = 0.03  # Paper uses learning rate 0.03
-    weight_decay   = 5e-4  # Paper uses weight decay 5e-4
+    num_labeled    = 1000  # 1000 and 4000
+    partial_rate   = 0.3   # 0.3 for F-MNIST
+    warmup_epochs  = 10    # warm-up period
+    num_epochs     = 500   #  500 epochs
+    batch_size     = 256   # batch size 256
+    lr             = 0.03  # learning rate 0.03
+    weight_decay   = 5e-4  #weight decay 5e-4
 
     # SPMI specific parameters from paper
-    tau            = 3.0   # Paper uses t = 3 for partial label data
-    unlabeled_tau  = 2.0   # Paper uses t = 2 for unlabeled data
+    tau            = 3.0   # t = 3 for partial label data
+    unlabeled_tau  = 2.0   # t = 2 for unlabeled data
     init_threshold = None  # Defaults to 1/C in SPMI
     prior_alpha    = 1.0  # Paper mentions no EMA smoothing for 1.0
-    use_ib_penalty = False # Paper doesn't use IB penalty for their main experiments
+    use_ib_penalty = False # Paper doesnt use IB penalty for their main experiments
     ib_beta        = 0.0
 
-    # EMA model - paper doesn't use EMA for inference
+    # EMA model - paper doesnt use EMA for inference
     use_ema        = False
     ema_decay      = 0.999
 

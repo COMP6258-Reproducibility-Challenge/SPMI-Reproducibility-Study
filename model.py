@@ -38,7 +38,6 @@ class LeNet(nn.Module):
 
 # Tiny CNN baseline for CIFAR/SVHN (3x32x32 -> 10 classes) 
 class SimpleCNN(nn.Module):
-    """"""
     def __init__(self, num_classes=10, in_channels=3):
         super().__init__()
         self.features = nn.Sequential(

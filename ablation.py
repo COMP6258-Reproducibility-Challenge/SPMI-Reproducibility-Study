@@ -246,15 +246,15 @@ def run_full_ablation_study(args):
     save_dir = f"ablation_{args.dataset}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     os.makedirs(save_dir, exist_ok=True)
     
-    # Ablation configs Option A - (flags_tuple, name) pairs
+    # Ablation configs Option A - ( flags_tuple , name) pairs
     ablation_configs = [
         ((True, True, True), "SPMI"),           # Full model
-        ((False, True, True), "SPMI w/o init"), # No initialization
+        ((False, True, True), "SPMI w/o init"), # No init
         ((True, False, True), "SPMI w/o LG"),   # No label generation
         ((True, True, False), "SPMI w/o LC")    # No label condensation
     ]
     
-    # Run for each dataset configuration different num_labeled, partial_rate
+    # Run for each dataset config different num_labeled, partial_rate
     all_results = {}
     for data_config in dataset_config['configs']:
         print(f"\n{'='*60}")

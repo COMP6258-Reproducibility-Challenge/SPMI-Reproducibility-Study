@@ -1,5 +1,6 @@
 import argparse
 import os
+import csv
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -112,6 +113,8 @@ class PRODEN_FixMatch_Fast:
     def train_epoch(self, loader, optimizer, scaler=None):
         self.model.train()
         total_loss = 0.0
+        total_sup_loss = 0.0
+        total_ssl_loss = 0.0
         num_batches = 0
         
         for batch in loader:
@@ -180,10 +183,17 @@ class PRODEN_FixMatch_Fast:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10.0)
                 optimizer.step()
             
+            # Track separate losses
             total_loss += loss.item()
+            total_sup_loss += sup_loss.item()
+            total_ssl_loss += ssl_loss.item()
             num_batches += 1
         
-        return total_loss / num_batches
+        return {
+            'total_loss': total_loss / num_batches,
+            'sup_loss': total_sup_loss / num_batches,
+            'ssl_loss': total_ssl_loss / num_batches
+        }
     
     @torch.no_grad()
     def evaluate(self, loader):
@@ -319,34 +329,98 @@ def main():
     print(f"Using mixed precision: {scaler is not None}")
     print(f"Number of workers: {num_workers}")
     
+    # Initialize CSV logging
+    csv_filename = f'proden_fixmatch_{args.dataset}_l{args.num_labeled}_p{args.partial_rate}_th{args.threshold}.csv'
+    csv_header = [
+        'epoch', 'learning_rate', 'total_loss', 'supervised_loss', 'ssl_loss', 
+        'test_accuracy', 'is_best', 'threshold_used'
+    ]
+    
+    # Create CSV file and write header
+    with open(csv_filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(csv_header)
+    
+    stats_log = []
     best_acc = 0.0
+    
     for epoch in range(1, args.epochs + 1):
         # Training
-        loss = trainer.train_epoch(train_loader, optimizer, scaler)
+        loss_dict = trainer.train_epoch(train_loader, optimizer, scaler)
+        current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
         
-        # Evaluation
-        if epoch % 10 == 0 or epoch == args.epochs:
-            test_acc = trainer.evaluate(test_loader)
-            
-            if test_acc > best_acc:
-                best_acc = test_acc
-                # Save best model
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'test_acc': test_acc,
-                    'args': args
-                }, f"best_proden_fixmatch_{args.dataset}.pth")
-            
+        # Evaluation (every epoch for CSV logging)
+        test_acc = trainer.evaluate(test_loader)
+        
+        # Check if best
+        is_best = test_acc > best_acc
+        if is_best:
+            best_acc = test_acc
+            # Save best model
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'test_acc': test_acc,
+                'args': args
+            }, f"best_proden_fixmatch_{args.dataset}.pth")
+        
+        # Prepare stats for this epoch
+        epoch_stats = {
+            'epoch': epoch,
+            'learning_rate': current_lr,
+            'total_loss': loss_dict['total_loss'],
+            'supervised_loss': loss_dict['sup_loss'],
+            'ssl_loss': loss_dict['ssl_loss'],
+            'test_accuracy': test_acc,
+            'is_best': is_best,
+            'threshold_used': args.threshold
+        }
+        
+        # Add to stats log
+        stats_log.append(epoch_stats)
+        
+        # Append to CSV
+        with open(csv_filename, 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow([
+                epoch, current_lr, loss_dict['total_loss'], loss_dict['sup_loss'], 
+                loss_dict['ssl_loss'], test_acc, is_best, args.threshold
+            ])
+        
+        # Print progress (every 10 epochs or when best)
+        if epoch % 10 == 0 or epoch == args.epochs or is_best:
             print(f"Epoch {epoch:3d}/{args.epochs} | "
-                  f"Loss: {loss:.4f} | "
+                  f"Loss: {loss_dict['total_loss']:.4f} | "
+                  f"Sup: {loss_dict['sup_loss']:.4f} | " 
+                  f"SSL: {loss_dict['ssl_loss']:.4f} | "
                   f"Test Acc: {test_acc:.2f}% | "
                   f"Best: {best_acc:.2f}% | "
-                  f"LR: {scheduler.get_last_lr()[0]:.6f}")
+                  f"LR: {current_lr:.6f}")
     
     print(f"\nTraining completed! Best accuracy: {best_acc:.2f}%")
+    print(f"Per-epoch statistics saved to: {csv_filename}")
+    
+    # Also save a summary JSON file with final stats
+    import json
+    summary = {
+        'dataset': args.dataset,
+        'num_labeled': args.num_labeled,
+        'partial_rate': args.partial_rate,
+        'threshold': args.threshold,
+        'lam_ssl': args.lam_ssl,
+        'final_accuracy': test_acc,
+        'best_accuracy': best_acc,
+        'total_epochs': args.epochs,
+        'csv_file': csv_filename
+    }
+    
+    summary_filename = f'proden_fixmatch_{args.dataset}_summary.json'
+    with open(summary_filename, 'w') as f:
+        json.dump(summary, f, indent=2)
+    
+    print(f"Summary saved to: {summary_filename}")
 
 if __name__ == '__main__':
     main()

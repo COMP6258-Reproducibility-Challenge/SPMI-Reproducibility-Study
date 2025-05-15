@@ -74,7 +74,6 @@ def get_dataset_config(dataset_name):
             'model_name': 'lenet',
             'in_ch': 1,
             'configs': [
-                {'num_labeled': 1000, 'partial_rate': 0.3},
                 {'num_labeled': 4000, 'partial_rate': 0.3}
             ]
         }
@@ -84,7 +83,6 @@ def get_dataset_config(dataset_name):
             'model_name': 'wrn-28-2',
             'in_ch': 3,
             'configs': [
-                {'num_labeled': 1000, 'partial_rate': 0.3},
                 {'num_labeled': 4000, 'partial_rate': 0.3}
             ]
         }

@@ -11,15 +11,6 @@ class SPMI:
                  prior_alpha: float = 0.9,
                  use_ib_penalty: bool = True,
                  ib_beta: float = 0.01):
-        
-        
-  
-
-    
-        
-        
- 
-        
         # ib_beta:        coefficient for IB penalty
         # nn.Module
         self.model = model

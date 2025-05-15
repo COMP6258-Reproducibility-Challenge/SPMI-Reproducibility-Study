@@ -42,8 +42,8 @@ def main():
     weight_decay   = 5e-4  # Paper uses weight decay 5e-4
 
     # SPMI specific parameters from paper
-    tau            = 3.0   # Paper uses τ = 3 for partial label data
-    unlabeled_tau  = 2.0   # Paper uses τ = 2 for unlabeled data
+    tau            = 3.0   # Paper uses t = 3 for partial label data
+    unlabeled_tau  = 2.0   # Paper uses t = 2 for unlabeled data
     init_threshold = None  # Defaults to 1/C in SPMI
     prior_alpha    = 1.0  # Paper mentions no EMA smoothing for 1.0
     use_ib_penalty = False # Paper doesn't use IB penalty for their main experiments
@@ -75,7 +75,7 @@ def main():
     print(f"Running on {device}\n")
 
     # Data - Fashion-MNIST specific transforms (no AutoAugment for F-MNIST per appendix)
-    transform_train = get_transforms(dataset_name, strong_aug=False)
+    transform_train = get_transforms(dataset_name, strong_aug=True)
     train_dataset = SPMIDataset(
         dataset_name,
         './data',

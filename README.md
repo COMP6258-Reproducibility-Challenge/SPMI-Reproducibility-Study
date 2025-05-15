@@ -37,19 +37,19 @@ The authors claim SPMI outperforms composite baselines (PRODEN + FixMatch), but 
 ---
 
 ## Repository Structure
-├── spmi.py                  # Core SPMI algorithm
-├── model.py                 # LeNet & WideResNet definitions
-├── dataset.py               # Data loaders & transforms
-├── train.py                 # Training loop & utils
-├── ablation.py              # Ablation-study harness
-├── fminstexp.py             # Fashion-MNIST
-├── cifar10exp.py            # CIFAR-10
-├── cifar100test1.y          # CIFAR100
-├── cifar100test2.py         # CIFAR100
-├── SHVNexp.py               # SVHN
-├── ProdenFixmatch.py        # PRODEN+FixMatch baseline
-├── logs/                    # Logs & metrics
-└── README.md                # This document
+├── spmi.py              # Core SPMI algorithm  
+├── model.py             # LeNet & WideResNet definitions  
+├── dataset.py           # Data loaders & transforms  
+├── train.py             # Training loop & utils  
+├── ablation.py          # Ablation-study harness  
+├── fminstexp.py         # Fashion-MNIST  
+├── cifar10exp.py        # CIFAR-10  
+├── cifar100test1.y      # CIFAR100  
+├── cifar100test2.py     # CIFAR100  
+├── SHVNexp.py           # SVHN  
+├── ProdenFixmatch.py    # PRODEN+FixMatch baseline  
+├── logs/                # Logs & metrics  
+└── README.md            # This document  
 
 ## Implementation Details
 

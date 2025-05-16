@@ -1,0 +1,5 @@
+filename,dataset,test_accuracy,epoch,num_labeled,partial_rate,threshold,lr,batch_size,lam_ssl
+best_proden_fixmatch_cifar10_1000_0.3.pth,cifar10,64.57,460,1000,0.3,0.95,0.03,512,1.0
+best_proden_fixmatch_fashion_mnist_1000_0.3.pth,fashion_mnist,89.22,370,1000,0.3,0.95,0.03,512,1.0
+best_proden_fixmatch_fashion_mnist.pth,fashion_mnist,92.57,392,4000,0.3,0.95,0.03,512,1.0
+best_proden_fixmatch_svhn_1000_0.3.pth,svhn,94.36,440,1000,0.3,0.95,0.03,512,1.0

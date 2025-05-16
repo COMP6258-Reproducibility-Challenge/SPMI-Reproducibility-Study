@@ -48,7 +48,7 @@ The authors claim SPMI outperforms composite baselines (PRODEN + FixMatch), but 
 ├── cifar100test2.py     # CIFAR100  
 ├── SHVNexp.py           # SVHN  
 ├── ProdenFixmatch.py    # PRODEN+FixMatch baseline  
-├── logs/                # Logs & metrics  
+├── logs/                # Logs and Results
 └── README.md            # This document  
 
 ## Implementation Details
